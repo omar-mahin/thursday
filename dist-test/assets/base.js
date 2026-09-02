@@ -1,1 +1,0 @@
-var e=`Thursday`,t=`thursday`,n=`Audit any live website. No account, no server, no network.`;`${t}`,`${t}`,`${t}`;var r=`${t}:`;export{n,r,e as t};
