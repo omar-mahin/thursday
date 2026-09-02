@@ -1,0 +1,36 @@
+{
+  "name": "thursday",
+  "version": "0.1.0",
+  "description": "Local-first website audit tool for Chrome",
+  "main": "index.js",
+  "scripts": {
+    "test": "npm run guard && npm run typecheck && npm run test:unit && npm run build && npm run test:e2e",
+    "test:unit": "vitest run",
+    "test:e2e": "playwright test",
+    "build": "vite build && vite build -c vite.content.config.ts && vite build -c vite.worker.config.ts",
+    "dev": "vite build --watch",
+    "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tools.json",
+    "guard": "node scripts/guard.mjs",
+    "icons": "node scripts/make-icons.mjs"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "module",
+  "private": "true",
+  "devDependencies": {
+    "@playwright/test": "^1.62.1",
+    "@types/chrome": "^0.2.8",
+    "@types/node": "^26.4.1",
+    "@types/react": "^19.2.18",
+    "@types/react-dom": "^19.2.5",
+    "@vitejs/plugin-react": "^6.1.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.2.2",
+    "vitest": "^4.1.11"
+  },
+  "dependencies": {
+    "react": "^19.2.8",
+    "react-dom": "^19.2.8"
+  }
+}

@@ -1,0 +1,24 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Control page</title>
+    <style>
+      /* Deliberately hostile to injected UI: these rules must not reach the
+         toolbar through the shadow boundary. */
+      * { font-family: 'Comic Sans MS', cursive !important; }
+      button { display: none !important; background: red !important; }
+      div { color: magenta !important; }
+      body { margin: 0; padding: 24px; font-size: 18px; }
+      main { max-width: 640px; }
+    </style>
+  </head>
+  <body>
+    <header><h1>Control page</h1></header>
+    <main>
+      <p>A clean page. Sprint 3 asserts that auditing this produces zero findings.</p>
+      <button type="button">Page button</button>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,62 @@
+/**
+ * Guards that make PLAN.md section 1 enforceable instead of aspirational.
+ *
+ *  1. No network API can appear anywhere in src/.  "We don't send much" is a
+ *     promise; "the code cannot send anything" is a property.
+ *  2. The content script may never read a form value (PLAN.md section 7).
+ *
+ * Guard 3 (manifest shape) lives in tests/unit/manifest.test.ts.
+ * Guard 4 (zero requests at runtime) lives in tests/e2e/network.spec.ts.
+ */
+import { readdirSync, readFileSync, statSync } from 'node:fs';
+import { join, relative } from 'node:path';
+
+const NETWORK_PATTERNS = [
+  /\bfetch\s*\(/,
+  /\bXMLHttpRequest\b/,
+  /\bWebSocket\b/,
+  /\bEventSource\b/,
+  /\bsendBeacon\b/,
+  /\bimportScripts\s*\(/,
+  /\bnavigator\.serviceWorker\b/,
+  /chrome\.runtime\.connectNative\b/,
+  /\bWebTransport\b/,
+];
+
+const VALUE_READ = /\.value\b/;
+
+function walk(dir) {
+  const out = [];
+  for (const entry of readdirSync(dir)) {
+    const path = join(dir, entry);
+    if (statSync(path).isDirectory()) out.push(...walk(path));
+    else if (/\.(ts|tsx|js|mjs)$/.test(entry)) out.push(path);
+  }
+  return out;
+}
+
+const violations = [];
+
+for (const file of walk('src')) {
+  const lines = readFileSync(file, 'utf8').split('\n');
+  const inContent = relative('src', file).startsWith('content');
+  lines.forEach((line, index) => {
+    const at = `${file}:${index + 1}`;
+    // A line may opt out only with an explicit, reviewable marker.
+    if (line.includes('guard-allow')) return;
+    for (const pattern of NETWORK_PATTERNS) {
+      if (pattern.test(line)) violations.push(`${at}  network API: ${pattern.source}\n    ${line.trim()}`);
+    }
+    if (inContent && VALUE_READ.test(line)) {
+      violations.push(`${at}  content script reads .value (see PLAN.md section 7)\n    ${line.trim()}`);
+    }
+  });
+}
+
+if (violations.length > 0) {
+  console.error(`\nGuard failed with ${violations.length} violation(s):\n`);
+  for (const violation of violations) console.error(`  ${violation}\n`);
+  process.exit(1);
+}
+
+console.log('guard: no network APIs in src/, no form-value reads in src/content/');

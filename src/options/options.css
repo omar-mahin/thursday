@@ -1,0 +1,8 @@
+body { padding: 28px 20px; }
+.wrap { max-width: 620px; margin: 0 auto; display: flex; flex-direction: column; gap: 18px; }
+.opt-head h1 { font-size: 17px; }
+.field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+.field:last-child { border-bottom: 0; }
+.field-label { font-weight: 500; }
+.privacy li { margin-bottom: 4px; }
+.privacy ul { margin: 6px 0 0; padding-left: 18px; }
