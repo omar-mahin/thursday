@@ -1,8 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectPort, type TypedPort } from '../../shared/messaging/port';
-import type { ThursdayMessage, ToolbarAction } from '../../shared/messaging/protocol';
+import type { SelectedElement, ThursdayMessage, ToolbarAction } from '../../shared/messaging/protocol';
 import { assertNever, USER_MESSAGES } from '../../shared/result';
-import type { Viewport } from '../../shared/types';
+import type { ElementPreview, PageSnapshot, ResolutionLevel, Viewport } from '../../shared/types';
 
 export type PageState = {
   activated: boolean;
@@ -11,6 +11,12 @@ export type PageState = {
   viewport: Viewport | null;
   lastToolbarAction: ToolbarAction | null;
   error: string | null;
+  selecting: boolean;
+  hovered: ElementPreview | null;
+  selection: SelectedElement | null;
+  /** Which rung of the resolution ladder last found the selected element. */
+  resolution: ResolutionLevel | null | 'unresolved';
+  snapshot: PageSnapshot | null;
 };
 
 export type LogEntry = { at: number; direction: 'in' | 'out'; type: ThursdayMessage['type'] };
@@ -22,6 +28,11 @@ const INITIAL: PageState = {
   viewport: null,
   lastToolbarAction: null,
   error: null,
+  selecting: false,
+  hovered: null,
+  selection: null,
+  resolution: null,
+  snapshot: null,
 };
 
 const LOG_LIMIT = 40;
@@ -60,17 +71,51 @@ export function usePageConnection(): {
           }));
           return;
         case 'PAGE_ACTIVATED':
-          setPage({
+          setPage((state) => ({
+            ...state,
             activated: true,
             url: message.payload.url,
             title: message.payload.title,
             viewport: message.payload.viewport,
-            lastToolbarAction: null,
             error: null,
-          });
+          }));
           return;
         case 'DEACTIVATED':
-          setPage((state) => ({ ...state, activated: false, viewport: null }));
+          setPage((state) => ({
+            ...state,
+            activated: false,
+            viewport: null,
+            selecting: false,
+            hovered: null,
+          }));
+          return;
+        case 'SELECTION_STATE':
+          setPage((state) => ({
+            ...state,
+            selecting: message.payload.active,
+            hovered: message.payload.active ? state.hovered : null,
+          }));
+          return;
+        case 'ELEMENT_HOVERED':
+          setPage((state) => ({ ...state, hovered: message.payload.preview }));
+          return;
+        case 'ELEMENT_SELECTED':
+          setPage((state) => ({
+            ...state,
+            selection: message.payload,
+            resolution: null,
+            selecting: false,
+            hovered: null,
+          }));
+          return;
+        case 'ELEMENT_RESOLVED':
+          setPage((state) => ({
+            ...state,
+            resolution: message.payload.level === null ? 'unresolved' : message.payload.level,
+          }));
+          return;
+        case 'SNAPSHOT_READY':
+          setPage((state) => ({ ...state, snapshot: message.payload }));
           return;
         case 'TOOLBAR_ACTION':
           setPage((state) => ({ ...state, lastToolbarAction: message.payload.action }));
@@ -81,17 +126,14 @@ export function usePageConnection(): {
             error: message.payload.detail ?? USER_MESSAGES[message.payload.code],
           }));
           return;
-        // Sprints 2-4 wire these up.
-        case 'ELEMENT_HOVERED':
-        case 'ELEMENT_SELECTED':
-        case 'SNAPSHOT_READY':
+        // Sprints 3-4 wire these up.
         case 'AUDIT_PROGRESS':
         case 'PIN_CLICKED':
-        case 'ELEMENT_RESOLVED':
           return;
         // Panel-to-page only.
         case 'ACTIVATE_PAGE':
         case 'GET_PAGE_STATUS':
+        case 'REQUEST_PAGE_INFO':
         case 'DEACTIVATE':
         case 'START_SELECTION':
         case 'CANCEL_SELECTION':

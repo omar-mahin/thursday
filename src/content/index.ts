@@ -1,9 +1,15 @@
 import { assertNever } from '../shared/result';
 import type { Envelope, ThursdayMessage, ToolbarAction } from '../shared/messaging/protocol';
 import { isEnvelope } from '../shared/messaging/protocol';
-import type { Viewport } from '../shared/types';
+import type { ElementReference, ResolutionLevel, Viewport } from '../shared/types';
+import { describeElement, resolveReference } from '../audit/element/identity';
 import { getSetting, setSetting } from '../storage/settings';
 import { createHost, type ShadowHost } from './host';
+import { createHighlight, describeForLabel, type Highlight } from './overlay/highlight';
+import { createSelection, type Selection } from './selector/selection';
+import { collectSnapshot } from './snapshot/collect';
+import { snapshotSingleElement } from './snapshot/element';
+import { toRect } from './snapshot/measure';
 import { createToolbar, type Toolbar } from './toolbar/toolbar';
 
 /**
@@ -47,7 +53,12 @@ function install(): void {
 
   let host: ShadowHost | null = null;
   let toolbar: Toolbar | null = null;
+  let highlight: Highlight | null = null;
+  let selection: Selection | null = null;
   let port: chrome.runtime.Port | null = null;
+  /** The live element behind the current selection. Held directly, never
+   *  re-queried, so identity cannot drift during a session. */
+  let selected: Element | null = null;
   let reconnectAttempts = 0;
   let disposed = false;
 
@@ -71,18 +82,23 @@ function install(): void {
       case 'DEACTIVATE':
         teardown();
         return;
+      case 'REQUEST_PAGE_INFO':
+        announceActivation();
+        return;
       case 'START_SELECTION':
+        selection?.start();
+        return;
       case 'CANCEL_SELECTION':
-        // Sprint 2.
-        toolbar?.announce('Element selection is not available yet.');
+        selection?.cancel();
         return;
       case 'REQUEST_SNAPSHOT':
-        // Sprint 2 builds the snapshot; failing loudly beats a silent no-op.
-        post({ type: 'ERROR', payload: { code: 'SNAPSHOT_FAILED', detail: 'Snapshot lands in Sprint 2.' } });
+        sendSnapshot(message.payload.includeOffscreen);
+        return;
+      case 'FOCUS_ELEMENT':
+        focusElement(message.payload.ref);
         return;
       case 'RENDER_PINS':
       case 'CLEAR_PINS':
-      case 'FOCUS_ELEMENT':
         // Sprint 4.
         return;
       // Never sent to the page.
@@ -93,6 +109,7 @@ function install(): void {
       case 'DEACTIVATED':
       case 'ELEMENT_HOVERED':
       case 'ELEMENT_SELECTED':
+      case 'SELECTION_STATE':
       case 'SNAPSHOT_READY':
       case 'AUDIT_PROGRESS':
       case 'PIN_CLICKED':
@@ -103,6 +120,53 @@ function install(): void {
       default:
         assertNever(message, 'content.handle');
     }
+  };
+
+  const sendSnapshot = (includeOffscreen: boolean): void => {
+    try {
+      const snapshot = collectSnapshot({ includeOffscreen });
+      post({ type: 'SNAPSHOT_READY', payload: snapshot });
+    } catch (error) {
+      post({
+        type: 'ERROR',
+        payload: { code: 'SNAPSHOT_FAILED', detail: error instanceof Error ? error.message : undefined },
+      });
+    }
+  };
+
+  const emitSelection = (element: Element): void => {
+    selected = element;
+    const snapshot = snapshotSingleElement(element);
+    const reference = describeElement(element, snapshot.rect);
+    post({ type: 'ELEMENT_SELECTED', payload: { element: snapshot, reference } });
+    toolbar?.announce(`Selected ${snapshot.tagName}${snapshot.accessibleName.name ? `, ${snapshot.accessibleName.name}` : ''}`);
+  };
+
+  /**
+   * Jumps to an element the panel asked for. Prefers the live handle from this
+   * session and only walks the resolution ladder when that is gone -- and it
+   * reports which rung answered, so the panel can admit when a hit is a guess.
+   */
+  const focusElement = (reference: ElementReference): void => {
+    const live = selected?.isConnected && selected.tagName.toLowerCase() === reference.tagName ? selected : null;
+    let element: Element | null = live;
+    let level: ResolutionLevel | null = null;
+    if (!element) {
+      const resolution = resolveReference(reference, document, (target) => toRect(target.getBoundingClientRect()));
+      element = resolution.element;
+      level = resolution.level;
+    }
+    if (!element) {
+      post({ type: 'ELEMENT_RESOLVED', payload: { ref: reference, level: null } });
+      return;
+    }
+    element.scrollIntoView({ block: 'center', inline: 'nearest', behavior: 'smooth' });
+    const rect = toRect(element.getBoundingClientRect());
+    highlight?.flash(rect, describeForLabel(element));
+    // Only report a resolution when the ladder was actually walked. Reusing the
+    // live handle from this session is not a match worth qualifying, and saying
+    // "found by id" for it would be a small lie.
+    if (!live) post({ type: 'ELEMENT_RESOLVED', payload: { ref: reference, level } });
   };
 
   const connect = (): void => {
@@ -136,9 +200,9 @@ function install(): void {
       teardown();
       return;
     }
-    if (action === 'settings') {
-      post({ type: 'TOOLBAR_ACTION', payload: { action } });
-      return;
+    if (action === 'select') {
+      if (selection?.isActive()) selection.cancel();
+      else selection?.start();
     }
     post({ type: 'TOOLBAR_ACTION', payload: { action } });
   };
@@ -147,6 +211,8 @@ function install(): void {
     if (disposed) return;
     disposed = true;
     post({ type: 'DEACTIVATED' });
+    selection?.destroy();
+    highlight?.destroy();
     toolbar?.destroy();
     host?.destroy();
     try {
@@ -159,6 +225,16 @@ function install(): void {
   }
 
   host = createHost();
+  highlight = createHighlight(host.layer);
+  selection = createSelection(highlight, {
+    onHover: (preview) => post({ type: 'ELEMENT_HOVERED', payload: { preview } }),
+    onPick: emitSelection,
+    onStateChange: (active) => {
+      toolbar?.setPressed('select', active);
+      toolbar?.announce(active ? 'Selection mode on. Click an element, or press Escape to cancel.' : 'Selection mode off.');
+      post({ type: 'SELECTION_STATE', payload: { active } });
+    },
+  });
   connect();
 
   void getSetting('toolbarPosition').then((saved) => {
@@ -169,6 +245,8 @@ function install(): void {
       onMoved: (position) => void setSetting('toolbarPosition', position),
     });
     host.layer.append(toolbar.element);
+    toolbar.setEnabled('select', true);
+    toolbar.setEnabled('inspect', true);
     announceActivation();
   });
 

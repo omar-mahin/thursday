@@ -38,3 +38,44 @@ body { min-width: 320px; }
 .log-row { display: flex; gap: 8px; padding: 3px 8px; border-bottom: 1px solid var(--line); }
 .log-row:last-child { border-bottom: 0; }
 .log-dir { color: var(--fg-dim); width: 14px; text-align: center; }
+
+.tabs {
+  display: flex;
+  gap: 2px;
+  padding: 6px 10px 0;
+  border-bottom: 1px solid var(--line);
+}
+.tabs button {
+  position: relative;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  border-radius: 6px 6px 0 0;
+  background: none;
+  color: var(--fg-dim);
+  padding: 7px 10px;
+  font-size: 12px;
+}
+.tabs button[aria-selected='true'] {
+  color: var(--fg);
+  border-bottom-color: var(--accent);
+  font-weight: 600;
+}
+.tab-dot {
+  display: inline-block;
+  width: 5px;
+  height: 5px;
+  margin-left: 5px;
+  border-radius: 50%;
+  background: var(--accent);
+  vertical-align: middle;
+}
+.card[data-selecting='true'] { border-color: color-mix(in srgb, var(--accent) 55%, var(--line)); }
+.swatch-row { display: inline-flex; align-items: center; gap: 6px; }
+.swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 3px;
+  border: 1px solid var(--line);
+  flex: none;
+}
+.kv dd { min-width: 0; overflow-wrap: anywhere; }

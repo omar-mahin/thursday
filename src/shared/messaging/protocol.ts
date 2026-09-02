@@ -8,6 +8,13 @@ import type {
   ResolutionLevel,
   Viewport,
 } from '../types';
+
+/** A hand-picked element: the measured facts plus the handle used to find it
+ *  again after a reload (PLAN.md section 2.5). */
+export type SelectedElement = {
+  element: ElementSnapshot;
+  reference: ElementReference;
+};
 import type { ErrorCode } from '../result';
 
 /**
@@ -19,14 +26,17 @@ export type ThursdayMessage =
   | { type: 'ACTIVATE_PAGE' }
   | { type: 'PAGE_ACTIVATED'; payload: { url: string; title: string; viewport: Viewport } }
   | { type: 'GET_PAGE_STATUS' }
+  /** Panel -> page: re-announce, for a panel that opened after activation. */
+  | { type: 'REQUEST_PAGE_INFO' }
   | { type: 'PAGE_STATUS'; payload: { activated: boolean; url?: string; title?: string } }
   | { type: 'DEACTIVATE' }
   | { type: 'DEACTIVATED' }
   // -- selection (Sprint 2) --------------------------------------------------
   | { type: 'START_SELECTION' }
   | { type: 'CANCEL_SELECTION' }
-  | { type: 'ELEMENT_HOVERED'; payload: ElementPreview }
-  | { type: 'ELEMENT_SELECTED'; payload: ElementSnapshot }
+  | { type: 'ELEMENT_HOVERED'; payload: { preview: ElementPreview | null } }
+  | { type: 'ELEMENT_SELECTED'; payload: SelectedElement }
+  | { type: 'SELECTION_STATE'; payload: { active: boolean } }
   // -- audit (Sprint 3) ------------------------------------------------------
   | { type: 'REQUEST_SNAPSHOT'; payload: { includeOffscreen: boolean } }
   | { type: 'SNAPSHOT_READY'; payload: PageSnapshot }

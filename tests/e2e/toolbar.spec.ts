@@ -98,3 +98,26 @@ test('close removes every trace from the page', async ({ openFixture }) => {
   );
   expect(leftovers).toBe(0);
 });
+
+test('the toolbar does not leak its events into the page', async ({ openFixture }) => {
+  // Events fired inside a shadow root retarget to the host and keep bubbling,
+  // so without containment the page sees every click on our own UI -- closing
+  // its menus, firing its analytics, stealing its keyboard shortcuts.
+  const page = await openFixture('control.html');
+  await injectContentScript(page);
+  await page.evaluate(() => {
+    (globalThis as unknown as { seen: string[] }).seen = [];
+    for (const type of ['pointerdown', 'mousedown', 'mouseup', 'click', 'keydown']) {
+      document.addEventListener(type, () => {
+        (globalThis as unknown as { seen: string[] }).seen.push(type);
+      });
+    }
+  });
+
+  await toolbar(page).locator('.grip').click();
+  await toolbar(page).getByRole('button', { name: 'Settings' }).click();
+  await toolbar(page).locator('button[tabindex="0"]').focus();
+  await page.keyboard.press('ArrowRight');
+
+  expect(await page.evaluate(() => (globalThis as unknown as { seen: string[] }).seen)).toEqual([]);
+});

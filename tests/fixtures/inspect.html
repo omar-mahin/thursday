@@ -1,0 +1,49 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Inspect fixture</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; }
+      header { padding: 12px 20px; background: #101318; color: #fff; }
+      main { padding: 24px 20px; }
+      .cta {
+        display: inline-block;
+        padding: 12px 22px;
+        margin-top: 16px;
+        border: 2px solid #1d4ed8;
+        border-radius: 8px;
+        background: #2563eb;
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        text-decoration: none;
+        cursor: pointer;
+      }
+      .tiny { width: 20px; height: 20px; }
+      .hidden-thing { display: none; }
+      .offscreen { position: absolute; left: -9999px; }
+    </style>
+  </head>
+  <body>
+    <header>
+      <nav aria-label="Main">
+        <a href="/features">Features</a>
+        <a href="/pricing">Pricing</a>
+      </nav>
+    </header>
+    <main>
+      <h1>Ship faster</h1>
+      <h4>A heading level was skipped on purpose</h4>
+      <p>Body copy for the element inspector to read.</p>
+      <button class="cta" data-testid="primary-cta" id="start-trial" type="button">Start free trial</button>
+      <button class="tiny" aria-label="Close">×</button>
+      <button></button>
+      <img src="data:image/gif;base64,R0lGODlhAQABAAAAACw=" />
+      <div class="hidden-thing">never collected</div>
+      <div class="offscreen">parked far away</div>
+      <iframe src="https://other.thursday.test/embed" title="Embedded"></iframe>
+    </main>
+  </body>
+</html>

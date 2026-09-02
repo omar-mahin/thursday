@@ -1,0 +1,37 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Sign in</title>
+  </head>
+  <body>
+    <main>
+      <h1>Sign in</h1>
+      <!-- Every field here is pre-filled. None of these values may appear in a snapshot. -->
+      <form>
+        <label for="email">Email</label>
+        <input id="email" name="email" type="email" autocomplete="email" value="ada@example.com" />
+
+        <label for="pw">Password</label>
+        <input id="pw" name="password" type="password" autocomplete="current-password" value="hunter2-secret" />
+
+        <label for="card">Card number</label>
+        <input id="card" name="cardNumber" autocomplete="cc-number" value="4111111111111111" />
+
+        <label for="cvv">CVV</label>
+        <input id="cvv" name="cvv" value="737" />
+
+        <label for="otp">One-time code</label>
+        <input id="otp" autocomplete="one-time-code" value="123456" />
+
+        <input type="hidden" name="csrf" value="csrf-token-abcdef123456" />
+
+        <label for="notes">Notes</label>
+        <textarea id="notes" name="notes">Call me on +1 (555) 123-4567 or ada@example.com</textarea>
+
+        <button type="submit">Sign in</button>
+      </form>
+      <p>Questions? Write to support@example.com or call +1 (555) 987-6543.</p>
+    </main>
+  </body>
+</html>

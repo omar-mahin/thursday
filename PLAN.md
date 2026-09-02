@@ -116,6 +116,13 @@ Selectors exist only for persistence, and a re-resolved element renders its pin 
 Rules are tested in Vitest against fixture snapshots; the snapshot *builder* is tested in Playwright.
 Never test a rule through a browser.
 
+Vitest runs two projects: `node` for pure logic, and `jsdom` for DOM-structure logic that needs no
+layout — accessible names and element identity. E2E uses two extension builds: `dist/` exactly as it
+ships, and `dist-test/`, a copy whose only difference is host access to the fake fixture origin.
+Playwright cannot click a browser-chrome action, and that click is what grants `activeTab`, so
+without the second build the real injection and messaging path would be untestable. No test hooks
+exist in the product itself.
+
 ### 2.7 The shadow root is open, not closed
 Reversed during Sprint 1. The isolation that matters is the shadow boundary itself, which behaves
 identically either way. A closed root does not actually stop a hostile page — it can still see the
@@ -439,16 +446,44 @@ that fetches from a dev server, which fights the zero-network posture and makes 
 audit. Cost: no HMR (`npm run dev` rebuilds instead). Manual verification on 5 real sites is still
 outstanding; the fixture page covers the hostile-CSS and layout cases automatically.
 
-### Sprint 2 — Inspection (3–4 days)
-Selection state machine (idle → hovering → picked); `elementFromPoint` + rAF throttle; highlight
-box with dimension label; ESC and right-click cancel; capture-phase `pointerdown` suppression of
-page clicks; self-exclusion of `<thursday-root>`; snapshot builder (`collect`/`measure`/
-`visibility`); accname subset; element descriptor + resolution ladder; `redact()`; Inspect panel
-showing the element's real measured values.
-**Done when:** hover feedback <100ms on a 3000-node page; full snapshot <400ms; a snapshot of a
-real login page provably contains no password field and no input values (asserted in a test).
+### Sprint 2 — Inspection ✅ complete
 
-### Sprint 3 — Rule engine (5–6 days)
+**Delivered.** Selection state machine with rAF-throttled `elementFromPoint` hit testing; highlight
+overlay with identity and dimension label; ESC / right-click cancel; capture-phase suppression of
+the whole click family (plus a trailing-click guard, see below); self-exclusion of our own UI;
+snapshot pipeline (`collect` / `measure` / `visibility` / `redact`) with a shared per-element
+builder used by both full-page collection and single-element picking; accname subset reporting its
+source and weakness; element descriptor plus the six-rung resolution ladder; the Element inspector
+in the panel, showing real measured values.
+
+**Verified:** 81 unit tests, 25 Playwright tests. Snapshot of a login page provably contains none
+of the six planted secrets and no `hasValue`-style key; hover feedback lands in <100ms on a
+3000-node page; a 3000-node snapshot completes in well under the 400ms budget and respects the
+1500-element cap; offscreen culling reduces that page to ~220 elements in <100ms; an element picked
+before a reload is found again through the ladder, and the panel says which rung answered.
+
+**Five bugs the tests caught, all fixed:**
+1. **Shadow-DOM events leaked into the page.** Events retarget to the host and keep bubbling, so
+   every toolbar click reached the page's `document` listeners. Contained at the host boundary.
+2. **The trailing click escaped.** Picking on `pointerdown` tore down the listeners before the
+   `click` arrived, so the page received it — navigating away from the element just selected.
+   A short-lived guard now outlives the session to eat it.
+3. **Our own UI was unclickable during selection.** The suppression was indiscriminate, so Cancel
+   could not be reached. Events are now checked against `composedPath()`.
+4. **The element cap ran before visibility culling**, so a visible element could be dropped in
+   favour of a hidden one. Culling now comes first; the cap applies to survivors.
+5. **Level 5 of the ladder had no verification.** Deleting an element hands its structural path to
+   the next sibling, so a removed element resolved confidently to an unrelated one. Positional
+   rungs now require corroboration by text, name, or size.
+
+**Two design changes made while building:**
+- **`hasValue` is gone from the form snapshot.** The spec sketched `{ type, hasValue }`; no MVP rule
+  consumes it, and any signal about contents is a privacy surface with no upside. Thursday cannot
+  tell whether a field is filled, which is a stronger claim than "we redact it".
+- **Panel messages no longer route to "the active tab".** They route to the tab that is actually
+  running Thursday, because switching tabs mid-audit sent messages to a page with no content script.
+
+### Sprint 3 — Rule engine (5–6 days) ← next
 Rule types, registry, engine, severity function, dedupe; contrast compositing with
 `indeterminate`; Flesch–Kincaid; color/typography clustering; **all 27 MVP rules** with a Vitest
 file each, including negative cases.

@@ -25,6 +25,12 @@ const NETWORK_PATTERNS = [
 
 const VALUE_READ = /\.value\b/;
 
+/**
+ * Lines that begin as a comment are prose, not code. Only a leading marker
+ * counts, so a trailing comment can never be used to hide a real call.
+ */
+const COMMENT_LINE = /^\s*(\/\/|\/?\*|\*\/)/;
+
 function walk(dir) {
   const out = [];
   for (const entry of readdirSync(dir)) {
@@ -44,6 +50,7 @@ for (const file of walk('src')) {
     const at = `${file}:${index + 1}`;
     // A line may opt out only with an explicit, reviewable marker.
     if (line.includes('guard-allow')) return;
+    if (COMMENT_LINE.test(line)) return;
     for (const pattern of NETWORK_PATTERNS) {
       if (pattern.test(line)) violations.push(`${at}  network API: ${pattern.source}\n    ${line.trim()}`);
     }

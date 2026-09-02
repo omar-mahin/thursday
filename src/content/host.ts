@@ -1,5 +1,5 @@
 import { HOST_TAG_NAME } from '../shared/constants/product';
-import { CONTENT_CSS } from './styles';
+import { CONTENT_CSS, OVERLAY_CSS } from './styles';
 
 export type ShadowHost = {
   host: HTMLElement;
@@ -10,6 +10,30 @@ export type ShadowHost = {
 };
 
 const MAX_REATTACH = 20;
+
+/**
+ * Events fired inside a shadow root retarget to the host and keep bubbling, so
+ * without this the page's own document listeners see every click on our
+ * toolbar -- closing its menus, firing its analytics, stealing its keyboard
+ * shortcuts. The extension must not interfere with normal page interaction
+ * (spec section 7), so the host boundary contains them.
+ *
+ * These run in the bubble phase, after the toolbar's own handlers, so
+ * containment costs the toolbar nothing.
+ */
+const CONTAINED_EVENTS = [
+  'pointerdown',
+  'pointerup',
+  'mousedown',
+  'mouseup',
+  'click',
+  'dblclick',
+  'auxclick',
+  'contextmenu',
+  'keydown',
+  'keyup',
+  'keypress',
+] as const;
 
 /**
  * The host is styled with !important inline properties because the page's own
@@ -45,12 +69,17 @@ export function createHost(): ShadowHost {
 
   const root = host.attachShadow({ mode: 'open' });
   const sheet = new CSSStyleSheet();
-  sheet.replaceSync(CONTENT_CSS);
+  sheet.replaceSync(CONTENT_CSS + OVERLAY_CSS);
   root.adoptedStyleSheets = [sheet];
 
   const layer = document.createElement('div');
   layer.className = 'layer';
   root.append(layer);
+
+  const contained = new AbortController();
+  for (const type of CONTAINED_EVENTS) {
+    host.addEventListener(type, (event) => event.stopPropagation(), { signal: contained.signal });
+  }
 
   // Attach to documentElement, not body: SPA frameworks replace body wholesale.
   document.documentElement.append(host);
@@ -69,6 +98,7 @@ export function createHost(): ShadowHost {
     layer,
     destroy() {
       observer.disconnect();
+      contained.abort();
       host.remove();
     },
   };

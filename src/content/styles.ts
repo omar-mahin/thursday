@@ -134,3 +134,56 @@ button:focus-visible {
   white-space: nowrap;
 }
 `;
+
+/** Selection overlay. Appended to the same constructed stylesheet. */
+export const OVERLAY_CSS = `
+.hl-box {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  pointer-events: none;
+  box-sizing: border-box;
+  border: 1px solid var(--thu-accent);
+  background: color-mix(in srgb, var(--thu-accent) 12%, transparent);
+  border-radius: 2px;
+  will-change: transform, width, height;
+}
+.hl-box[data-tone="selected"] {
+  border-width: 2px;
+  border-style: solid;
+}
+.hl-box[data-flash="true"] {
+  animation: thu-flash 1.4s ease-out;
+}
+@keyframes thu-flash {
+  0%, 40% { background: color-mix(in srgb, var(--thu-accent) 34%, transparent); }
+  100% { background: color-mix(in srgb, var(--thu-accent) 6%, transparent); }
+}
+
+.hl-label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  align-items: center;
+  gap: 8px;
+  max-width: 240px;
+  height: 22px;
+  padding: 0 7px;
+  border-radius: 5px;
+  background: var(--thu-accent);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  white-space: nowrap;
+  pointer-events: none;
+  will-change: transform;
+}
+.hl-identity {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+.hl-size { opacity: 0.8; font-variant-numeric: tabular-nums; }
+`;

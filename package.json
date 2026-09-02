@@ -6,12 +6,13 @@
   "scripts": {
     "test": "npm run guard && npm run typecheck && npm run test:unit && npm run build && npm run test:e2e",
     "test:unit": "vitest run",
-    "test:e2e": "playwright test",
+    "test:e2e": "npm run build:test && playwright test",
     "build": "vite build && vite build -c vite.content.config.ts && vite build -c vite.worker.config.ts",
     "dev": "vite build --watch",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.tools.json",
     "guard": "node scripts/guard.mjs",
-    "icons": "node scripts/make-icons.mjs"
+    "icons": "node scripts/make-icons.mjs",
+    "build:test": "node scripts/build-test-extension.mjs"
   },
   "keywords": [],
   "author": "",
@@ -21,10 +22,12 @@
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/chrome": "^0.2.8",
+    "@types/jsdom": "^30.0.0",
     "@types/node": "^26.4.1",
     "@types/react": "^19.2.18",
     "@types/react-dom": "^19.2.5",
     "@vitejs/plugin-react": "^6.1.1",
+    "jsdom": "^30.0.1",
     "typescript": "^7.0.2",
     "vite": "^8.2.2",
     "vitest": "^4.1.11"

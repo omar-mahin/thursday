@@ -14,6 +14,9 @@ import { checkUrl } from '../shared/utils/url';
 const contentPorts = new Map<number, chrome.runtime.Port>();
 const panelPorts = new Set<chrome.runtime.Port>();
 
+/** The tab the user most recently activated. See targetTab(). */
+let lastActivatedTabId: number | undefined;
+
 const CONTENT_SCRIPT_FILE = 'content.js';
 
 // The popup opens the side panel itself (it has the user gesture), so the action
@@ -27,6 +30,23 @@ chrome.runtime.onInstalled.addListener(() => {
 async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tab;
+}
+
+/**
+ * Which tab a panel message is for.
+ *
+ * Routing purely by "the active tab" is wrong the moment the user switches tabs
+ * while the panel is open: the message lands on a page that has no content
+ * script, and the panel reports "not activated" for a page it is still showing.
+ * So prefer the active tab only when it is actually running Thursday, then fall
+ * back to the last tab the user activated, then to the only running tab.
+ */
+async function targetTab(): Promise<number | undefined> {
+  const active = await getActiveTab();
+  if (active?.id !== undefined && contentPorts.has(active.id)) return active.id;
+  if (lastActivatedTabId !== undefined && contentPorts.has(lastActivatedTabId)) return lastActivatedTabId;
+  if (contentPorts.size === 1) return [...contentPorts.keys()][0];
+  return undefined;
 }
 
 function toPanels(message: ThursdayMessage, tabId?: number): void {
@@ -66,6 +86,7 @@ async function activate(tabId: number, url: string | undefined): Promise<{ ok: b
       target: { tabId, allFrames: false },
       files: [CONTENT_SCRIPT_FILE],
     });
+    lastActivatedTabId = tabId;
     return { ok: true };
   } catch {
     return { ok: false, code: 'INJECTION_FAILED' };
@@ -102,8 +123,8 @@ chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {
     }
     case 'DEACTIVATE': {
       void (async () => {
-        const tab = await getActiveTab();
-        const delivered = tab?.id !== undefined && toContent(tab.id, { type: 'DEACTIVATE' });
+        const tabId = await targetTab();
+        const delivered = tabId !== undefined && toContent(tabId, { type: 'DEACTIVATE' });
         sendResponse(delivered ? { ok: true, value: undefined } : { ok: false, error: { code: 'NOT_ACTIVATED' } });
       })();
       return true;
@@ -121,6 +142,9 @@ chrome.runtime.onConnect.addListener((port) => {
       return;
     }
     contentPorts.set(tabId, port);
+    // A connecting content script is the truest signal of what the user
+    // activated -- truer than the injection call, which a reload invalidates.
+    lastActivatedTabId = tabId;
     port.onDisconnect.addListener(() => {
       contentPorts.delete(tabId);
       toPanels({ type: 'PAGE_STATUS', payload: { activated: false } }, tabId);
@@ -139,14 +163,17 @@ chrome.runtime.onConnect.addListener((port) => {
       if (!isEnvelope(raw)) return;
       void routeFromPanel(raw.message);
     });
-    // Tell a freshly opened panel what it is looking at.
+    // Tell a freshly opened panel what it is looking at. PAGE_ACTIVATED is a
+    // one-shot broadcast, so a panel opened after activation missed it: ask the
+    // page to say it again rather than caching a stale copy here.
     void (async () => {
-      const tab = await getActiveTab();
-      const activated = tab?.id !== undefined && contentPorts.has(tab.id);
+      const tabId = await targetTab();
+      const activated = tabId !== undefined;
       port.postMessage({
         from: 'content',
         message: { type: 'PAGE_STATUS', payload: { activated } },
       } satisfies Envelope);
+      if (tabId !== undefined) toContent(tabId, { type: 'REQUEST_PAGE_INFO' });
     })();
     return;
   }
@@ -161,6 +188,7 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'DEACTIVATED':
     case 'ELEMENT_HOVERED':
     case 'ELEMENT_SELECTED':
+    case 'SELECTION_STATE':
     case 'SNAPSHOT_READY':
     case 'PIN_CLICKED':
     case 'ELEMENT_RESOLVED':
@@ -172,6 +200,7 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'ACTIVATE_PAGE':
     case 'DEACTIVATE':
     case 'GET_PAGE_STATUS':
+    case 'REQUEST_PAGE_INFO':
     case 'PAGE_STATUS':
     case 'START_SELECTION':
     case 'CANCEL_SELECTION':
@@ -186,7 +215,7 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
   }
 }
 
-/** Panel -> content, for the active tab. */
+/** Panel -> content, for the tab the panel is bound to (see targetTab). */
 async function routeFromPanel(message: ThursdayMessage): Promise<void> {
   switch (message.type) {
     case 'ACTIVATE_PAGE': {
@@ -202,12 +231,13 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'DEACTIVATE':
     case 'START_SELECTION':
     case 'CANCEL_SELECTION':
+    case 'REQUEST_PAGE_INFO':
     case 'REQUEST_SNAPSHOT':
     case 'RENDER_PINS':
     case 'CLEAR_PINS':
     case 'FOCUS_ELEMENT': {
-      const tab = await getActiveTab();
-      if (tab?.id === undefined || !toContent(tab.id, message)) panelError('NOT_ACTIVATED');
+      const tabId = await targetTab();
+      if (tabId === undefined || !toContent(tabId, message)) panelError('NOT_ACTIVATED');
       return;
     }
     // Content-bound or panel-bound only.
@@ -217,6 +247,7 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'DEACTIVATED':
     case 'ELEMENT_HOVERED':
     case 'ELEMENT_SELECTED':
+    case 'SELECTION_STATE':
     case 'SNAPSHOT_READY':
     case 'AUDIT_PROGRESS':
     case 'PIN_CLICKED':

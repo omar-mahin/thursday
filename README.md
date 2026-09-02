@@ -12,8 +12,12 @@ See [PLAN.md](PLAN.md) for the full engineering plan.
 
 ## Status
 
-Sprint 1 of 6 is complete: extension foundation, on-demand injection, shadow-DOM toolbar, typed
-messaging, and the four privacy guards. There is no audit engine yet (Sprint 3).
+Sprints 1–2 of 6 are complete.
+
+- **Sprint 1** — extension foundation: on-demand injection, shadow-DOM toolbar, typed messaging, four privacy guards.
+- **Sprint 2** — inspection: click any element and read its measured facts (box, type, color, accessibility, reference), plus the page snapshot pipeline behind it.
+
+Next is Sprint 3, the deterministic rule engine. Nothing is audited yet.
 
 ## Run it
 
@@ -43,6 +47,7 @@ the cost of asking for no host permissions, and it is deliberate.
 | `npm run guard` | Static privacy guards (see below) |
 | `npm run test:unit` | Vitest — pure logic |
 | `npm run test:e2e` | Playwright — real Chromium with the extension loaded |
+| `npm run build:test` | Test-only build with host access to the fixture origin (see below) |
 | `npm test` | All of the above, in order |
 
 First E2E run needs a browser: `npx playwright install chromium`.
@@ -58,12 +63,18 @@ Four checks turn the promises in PLAN.md section 1 into properties:
 
 Widening any of these has to break a test.
 
+The E2E suite loads two builds: `dist/` exactly as it ships, and `dist-test/` — a copy whose only
+difference is host access to a fake fixture origin that does not exist. Playwright cannot click a
+browser-chrome extension action, and that click is what grants `activeTab`, so without the second
+build the real injection path would be untestable. The product itself contains no test hooks.
+
 ## Layout
 
 ```
 manifest.config.ts     typed manifest, the single source for permissions
 src/background/        service worker: router only, holds no state
-src/content/           injected on demand: shadow host, toolbar, (Sprint 2) snapshot
+src/content/           injected on demand: shadow host, toolbar, selection, snapshot
+src/audit/             accessible names, implicit roles, element identity
 src/sidepanel/         React audit UI, owns audit state
 src/popup/             activation entry point (the only place that can grant activeTab)
 src/options/           settings and data management

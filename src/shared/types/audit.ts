@@ -17,6 +17,8 @@ export type AuditStage = 'snapshot' | 'structure' | 'accessibility' | 'visual' |
 
 export type PageSnapshot = {
   capturedAt: number;
+  /** How long collection took. Surfaced in the report, and budgeted in tests. */
+  durationMs: number;
   url: string;
   origin: string;
   title: string;
