@@ -12,12 +12,28 @@ See [PLAN.md](PLAN.md) for the full engineering plan.
 
 ## Status
 
-Sprints 1–2 of 6 are complete.
+Sprints 1–3 of 6 are complete. **Thursday audits pages now.**
 
 - **Sprint 1** — extension foundation: on-demand injection, shadow-DOM toolbar, typed messaging, four privacy guards.
 - **Sprint 2** — inspection: click any element and read its measured facts (box, type, color, accessibility, reference), plus the page snapshot pipeline behind it.
+- **Sprint 3** — the rule engine: 30 deterministic rules across accessibility, UI, UX, content, conversion and responsive layout, each finding carrying its own evidence.
 
-Next is Sprint 3, the deterministic rule engine. Nothing is audited yet.
+Next is Sprint 4: the findings UI proper — page pins, status transitions, filters.
+
+## The rules
+
+| Category | Rules |
+|---|---|
+| Accessibility | missing alt, unlabelled fields, contrast, touch targets, heading hierarchy, focus indicator, empty controls, duplicate ids, document lang/title, positive tabindex |
+| UI | inconsistent buttons, spacing off the page's scale, type sprawl, alignment near-misses, near-duplicate colours |
+| UX | competing calls to action, oversized navigation, long ungrouped forms, non-obvious clickables |
+| Content | vague link labels, duplicate link text, long paragraphs, reading grade, shouting text, unheaded copy |
+| Conversion | no action before the fold, too many competing actions in the first screen |
+| Responsive | horizontal overflow, fixed-width blockers, tiny text on small screens |
+
+Three things the rules will not do: report a contrast ratio it cannot actually compute (it says
+"could not be verified", and why), call a heuristic a WCAG violation, or claim a spacing scale
+exists when the page has none.
 
 ## Run it
 

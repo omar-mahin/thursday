@@ -33,7 +33,7 @@ export const isStableId = (id: string): boolean =>
 
 const escapeAttr = (value: string): string => value.replace(/(["\\])/g, '\\$1');
 
-function stableAttribute(element: Element): { name: string; value: string } | undefined {
+export function stableAttributeOf(element: Element): { name: string; value: string } | undefined {
   for (const name of TEST_ATTRIBUTES) {
     const value = element.getAttribute(name);
     if (value && value.length < 100) return { name, value };
@@ -92,7 +92,7 @@ export function textSnippet(element: Element): string | undefined {
 export function describeElement(element: Element, rect: Rect): ElementReference {
   const { role } = effectiveRole(element);
   const name = computeAccessibleName(element);
-  const attribute = stableAttribute(element);
+  const attribute = stableAttributeOf(element);
   const snippet = textSnippet(element);
 
   const reference: ElementReference = {

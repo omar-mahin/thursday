@@ -1,25 +1,47 @@
-import { FLAGS } from '../../shared/constants/flags';
+import { ALL_CATEGORIES, CATEGORY_LABELS } from '../../audit/engine/registry';
+import type { AuditCategory } from '../../shared/types';
 
-const CATEGORIES = ['UX', 'UI', 'A11Y', 'Content', 'CRO', 'Responsive'] as const;
-
-/** The launcher is deliberately inert until Sprint 3 ships the rule engine.
- *  Disabled controls that explain themselves beat controls that lie. */
-export function AuditLauncher({ activated }: { activated: boolean }): React.ReactElement {
-  const ready = activated && FLAGS.auditEngine;
+/** Starts an audit, for everything or for one category. */
+export function AuditLauncher({
+  activated,
+  running,
+  onStart,
+}: {
+  activated: boolean;
+  running: boolean;
+  onStart(categories?: AuditCategory[]): void;
+}): React.ReactElement {
+  const disabled = !activated || running;
   return (
     <section className="card">
       <div className="section-title">Audit</div>
-      <button type="button" className="primary" style={{ width: '100%' }} disabled={!ready}>
-        Full audit
+      <button
+        type="button"
+        className="primary"
+        style={{ width: '100%' }}
+        disabled={disabled}
+        onClick={() => onStart()}
+      >
+        {running ? 'Scanning…' : 'Full audit'}
       </button>
       <div className="categories">
-        {CATEGORIES.map((category) => (
-          <button key={category} type="button" disabled={!ready}>
-            {category}
+        {ALL_CATEGORIES.map((category) => (
+          <button key={category} type="button" disabled={disabled} onClick={() => onStart([category])}>
+            {CATEGORY_LABELS[category]}
           </button>
         ))}
       </div>
-      {!FLAGS.auditEngine ? <p className="hint" style={{ margin: '8px 0 0' }}>Rule engine arrives in Sprint 3.</p> : null}
+      {running ? (
+        <div className="progress" role="status" style={{ marginTop: 8 }}>
+          <span className="spinner" aria-hidden="true" />
+          Reading the page and applying rules
+        </div>
+      ) : null}
+      {!activated ? (
+        <p className="hint" style={{ margin: '8px 0 0' }}>
+          Activate Thursday on this page to run an audit.
+        </p>
+      ) : null}
     </section>
   );
 }

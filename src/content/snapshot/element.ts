@@ -1,7 +1,9 @@
 import { computeAccessibleName } from '../../audit/accessibility/accname';
 import { effectiveRole, headingLevel } from '../../audit/accessibility/roles';
+import { stableAttributeOf, structuralPath } from '../../audit/element/identity';
 import type { AccessibleName, ElementSnapshot, FormFieldSnapshot, Rect } from '../../shared/types';
 import { measureAll, toStyleSnapshot, type Measured } from './measure';
+import { words } from '../../audit/measure/text';
 import { formSnapshot, isSensitiveField, sanitize, sanitizeHref } from './redact';
 import { isFocusable, isInteractive, isInViewport } from './visibility';
 
@@ -104,6 +106,7 @@ export function buildElementSnapshot(measured: Measured, context: BuildContext):
     accessibleName: sensitive ? { name: '', source: 'none', weak: false } : computeAccessibleName(element),
     aria: sensitive ? {} : ariaAttributes(element),
     textLength: 0,
+    wordCount: 0,
     rect,
     documentRect,
     inViewport: isInViewport(rect, context.viewportWidth, context.viewportHeight),
@@ -113,8 +116,12 @@ export function buildElementSnapshot(measured: Measured, context: BuildContext):
     disabled,
     ariaHidden: element.getAttribute('aria-hidden') === 'true',
     styles: toStyleSnapshot(style),
+    structuralPath: structuralPath(element),
     redacted: sensitive,
   };
+
+  const handle = stableAttributeOf(element);
+  if (handle) snapshot.stableAttribute = handle;
 
   if (level !== undefined) snapshot.headingLevel = level;
   if (role) snapshot.role = role;
@@ -132,6 +139,7 @@ export function buildElementSnapshot(measured: Measured, context: BuildContext):
   const raw = ownText(element);
   if (raw.trim()) {
     snapshot.textLength = raw.trim().length;
+    snapshot.wordCount = words(raw).length;
     if (context.allowText) snapshot.text = sanitize(raw);
   }
 

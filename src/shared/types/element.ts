@@ -126,7 +126,14 @@ export type ElementSnapshot = {
   aria: Record<string, string>;
 
   text?: string;
+  /** Characters of own text, before the 200-character cap. */
   textLength: number;
+  /**
+   * Words of own text, counted before truncation. The rules need this because
+   * extrapolating a word count from a 200-character sample is unreliable: dense
+   * openings under-count badly.
+   */
+  wordCount: number;
   alt?: string;
   placeholder?: string;
   title?: string;
@@ -145,6 +152,11 @@ export type ElementSnapshot = {
 
   styles: StyleSnapshot;
   form?: FormFieldSnapshot;
+
+  /** Identity handles captured during collection, so the panel and the rules
+   *  can build an ElementReference without touching the DOM. */
+  structuralPath: string;
+  stableAttribute?: { name: string; value: string };
 
   /** True when the element was skipped for privacy (PLAN.md section 7). */
   redacted: boolean;

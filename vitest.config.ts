@@ -5,7 +5,7 @@ export default defineConfig({
     projects: [
       {
         // Pure logic: no DOM, no layout.
-        test: { name: 'node', environment: 'node', include: ['tests/unit/*.test.ts'] },
+        test: { name: 'node', environment: 'node', include: ['tests/unit/*.test.ts', 'tests/unit/rules/*.test.ts'] },
       },
       {
         // DOM structure and attributes, still no layout -- jsdom is enough for

@@ -1,7 +1,7 @@
 import { expect, injectContentScript, test, toolbar } from './fixtures';
 
 test('the toolbar mounts in a shadow root and survives hostile page CSS', async ({ openFixture }) => {
-  const page = await openFixture('control.html');
+  const page = await openFixture('hostile.html');
   const layoutBefore = await page.evaluate(() => ({
     scrollWidth: document.documentElement.scrollWidth,
     scrollHeight: document.documentElement.scrollHeight,
@@ -29,7 +29,7 @@ test('the toolbar mounts in a shadow root and survives hostile page CSS', async 
 });
 
 test('injecting twice re-attaches instead of stacking a second toolbar', async ({ openFixture }) => {
-  const page = await openFixture('control.html');
+  const page = await openFixture('hostile.html');
   await injectContentScript(page);
   await injectContentScript(page);
   await expect(page.locator('thursday-root')).toHaveCount(1);
@@ -37,7 +37,7 @@ test('injecting twice re-attaches instead of stacking a second toolbar', async (
 });
 
 test('the toolbar is a keyboard-operable toolbar widget', async ({ openFixture }) => {
-  const page = await openFixture('control.html');
+  const page = await openFixture('hostile.html');
   await injectContentScript(page);
 
   await expect(toolbar(page)).toHaveAttribute('role', 'toolbar');
@@ -59,7 +59,7 @@ test('the toolbar is a keyboard-operable toolbar widget', async ({ openFixture }
 });
 
 test('dragging by the grip moves the toolbar and keeps it in the viewport', async ({ openFixture }) => {
-  const page = await openFixture('control.html');
+  const page = await openFixture('hostile.html');
   await injectContentScript(page);
 
   const before = await toolbar(page).boundingBox();
@@ -87,7 +87,7 @@ test('dragging by the grip moves the toolbar and keeps it in the viewport', asyn
 });
 
 test('close removes every trace from the page', async ({ openFixture }) => {
-  const page = await openFixture('control.html');
+  const page = await openFixture('hostile.html');
   await injectContentScript(page);
   await toolbar(page).getByRole('button', { name: 'Close Thursday' }).click();
   await expect(page.locator('thursday-root')).toHaveCount(0);
@@ -103,7 +103,7 @@ test('the toolbar does not leak its events into the page', async ({ openFixture 
   // Events fired inside a shadow root retarget to the host and keep bubbling,
   // so without containment the page sees every click on our own UI -- closing
   // its menus, firing its analytics, stealing its keyboard shortcuts.
-  const page = await openFixture('control.html');
+  const page = await openFixture('hostile.html');
   await injectContentScript(page);
   await page.evaluate(() => {
     (globalThis as unknown as { seen: string[] }).seen = [];

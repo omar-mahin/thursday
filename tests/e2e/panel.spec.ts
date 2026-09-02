@@ -126,3 +126,68 @@ test('hovering during selection streams a live readout to the panel', async ({
   await expect(readout).toContainText('link');
   await expect(readout).toContainText('Pricing');
 });
+
+test('running a full audit from the panel shows findings and jumps to the element', async ({
+  openFixture,
+  activate,
+  extensionId,
+}) => {
+  const page = await openFixture('accessibility.html');
+  await activate(page);
+  const panel = await page.context().newPage();
+  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+
+  await panel.getByRole('button', { name: 'Full audit' }).click();
+
+  // A finding has to answer what, why and what now.
+  const first = panel.locator('.finding').first();
+  await expect(first).toBeVisible();
+  await expect(panel.locator('.sev-chip').first()).toBeVisible();
+  await expect(first).toContainText('Evidence');
+  await expect(first).toContainText('Impact');
+  await expect(first).toContainText('Recommendation');
+
+  // Severity ordering: the first finding is at least as severe as the last.
+  const severities = await panel.locator('.finding').evaluateAll((nodes) =>
+    nodes.map((node) => node.getAttribute('data-severity')),
+  );
+  const rank = ['info', 'low', 'medium', 'high', 'critical'];
+  expect(rank.indexOf(severities[0]!)).toBeGreaterThanOrEqual(rank.indexOf(severities.at(-1)!));
+
+  // And it can take us to the element it is about.
+  await first.getByRole('button', { name: 'Show on page' }).click();
+  await expect(page.locator('thursday-root .hl-box')).toBeVisible();
+});
+
+test('auditing one category runs only that category', async ({ openFixture, activate, extensionId }) => {
+  const page = await openFixture('content.html');
+  await activate(page);
+  const panel = await page.context().newPage();
+  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+
+  await panel.getByRole('button', { name: 'Content', exact: true }).click();
+
+  // The first finding is expanded by default, so its rule id is on screen.
+  const first = panel.locator('.finding').first();
+  await expect(first).toBeVisible();
+  await expect(first).toContainText('CNT-');
+
+  // And nothing from another category leaked in: only content rules ran.
+  const titles = await panel.locator('.finding-title').allInnerTexts();
+  expect(titles.length).toBeGreaterThan(0);
+  await expect(panel.locator('.finding-meta .mono')).toHaveText(/^CNT-/);
+});
+
+test('a clean page reports that it found nothing, rather than showing an empty list', async ({
+  openFixture,
+  activate,
+  extensionId,
+}) => {
+  const page = await openFixture('control.html');
+  await activate(page);
+  const panel = await page.context().newPage();
+  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+
+  await panel.getByRole('button', { name: 'Full audit' }).click();
+  await expect(panel.getByText(/Nothing found in 6 categories/)).toBeVisible();
+});

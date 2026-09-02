@@ -79,3 +79,59 @@ body { min-width: 320px; }
   flex: none;
 }
 .kv dd { min-width: 0; overflow-wrap: anywhere; }
+
+.sev-row { display: flex; flex-wrap: wrap; gap: 6px; margin: 8px 0; }
+.sev-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 2px 9px;
+  font-size: 11px;
+  font-weight: 600;
+}
+.sev-chip[data-severity='critical'], .finding-sev[data-severity='critical'] { color: #e0335b; }
+.sev-chip[data-severity='high'], .finding-sev[data-severity='high'] { color: #d9622b; }
+.sev-chip[data-severity='medium'], .finding-sev[data-severity='medium'] { color: #b08000; }
+.sev-chip[data-severity='low'], .finding-sev[data-severity='low'] { color: #4a7fbe; }
+.sev-chip[data-severity='info'], .finding-sev[data-severity='info'] { color: var(--fg-dim); }
+
+.findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.finding { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-raised); overflow: hidden; }
+.finding-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  width: 100%;
+  border: 0;
+  border-radius: 0;
+  background: none;
+  padding: 9px 10px;
+  text-align: left;
+}
+.finding-head:hover { background: var(--bg-hover); }
+.finding-sev { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; flex: none; }
+.finding-title { font-weight: 500; }
+.finding-body { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 10px; }
+.finding-summary { margin: 0; color: var(--fg); }
+.finding-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+.finding-block h3 {
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--fg-dim);
+  margin: 0 0 3px;
+}
+.finding-block p { margin: 0; }
+.finding-block ul { margin: 0; padding-left: 16px; }
+.finding-block li { margin-bottom: 2px; }
+.progress { display: flex; align-items: center; gap: 8px; font-size: 12px; color: var(--fg-dim); }
+.spinner {
+  width: 12px; height: 12px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 0.7s linear infinite;
+}
+@keyframes spin { to { transform: rotate(360deg); } }

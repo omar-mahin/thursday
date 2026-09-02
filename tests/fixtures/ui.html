@@ -1,0 +1,48 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>UI fixture</title>
+    <style>
+      body { margin: 0; padding: 24px; font-family: system-ui, sans-serif; font-size: 16px; color: #16181d; background: #fff; }
+      section { max-width: 640px; }
+      /* UI-001: a dominant button style, plus two that break it */
+      .btn { display: inline-block; min-width: 140px; min-height: 48px; padding: 12px 24px;
+             border: 1px solid #1f4fd8; border-radius: 8px; background: #1f4fd8; color: #fff;
+             font-size: 16px; font-weight: 600; cursor: pointer; }
+      .btn.odd { border-radius: 0; background: #b91c1c; border-color: #b91c1c; }
+      /* UI-002: rows on a 16px rhythm, with one 19px gap */
+      .row { margin: 0 0 16px; min-height: 48px; }
+      .row.off { margin-bottom: 19px; }
+      /* UI-005: a near-miss on alignment */
+      .card { width: 400px; min-height: 40px; margin-bottom: 16px; border: 1px solid #d8dce4; }
+      .card.nudged { margin-left: 3px; }
+      /* UI-006: two greys nobody could tell apart */
+      .grey-a { color: #333333; }
+      .grey-b { color: #343434; }
+    </style>
+  </head>
+  <body>
+    <section>
+      <h1>UI fixture</h1>
+
+      <div class="row"><button type="button" class="btn">Save changes</button></div>
+      <div class="row"><button type="button" class="btn">Publish draft</button></div>
+      <div class="row"><button type="button" class="btn">Duplicate item</button></div>
+      <div class="row off"><button type="button" class="btn odd">Delete item</button></div>
+      <div class="row"><button type="button" class="btn odd">Archive item</button></div>
+
+      <div class="card">Aligned card one</div>
+      <div class="card">Aligned card two</div>
+      <div class="card nudged">Nudged three pixels</div>
+      <div class="card">Aligned card four</div>
+
+      <p class="grey-a">This grey and the next one differ by an amount no one can see.</p>
+      <p class="grey-b">Which usually means a value escaped the palette.</p>
+      <p class="grey-a">More body copy in the first grey.</p>
+      <p class="grey-a">And more again, to make the palette obvious.</p>
+      <p class="grey-a">Filler copy for the colour census.</p>
+      <p class="grey-a">Filler copy for the colour census.</p>
+    </section>
+  </body>
+</html>

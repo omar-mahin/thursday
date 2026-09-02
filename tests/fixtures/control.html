@@ -5,20 +5,88 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>Control page</title>
     <style>
-      /* Deliberately hostile to injected UI: these rules must not reach the
-         toolbar through the shadow boundary. */
-      * { font-family: 'Comic Sans MS', cursive !important; }
-      button { display: none !important; background: red !important; }
-      div { color: magenta !important; }
-      body { margin: 0; padding: 24px; font-size: 18px; }
-      main { max-width: 640px; }
+      /* Deliberately well-formed: this page is the false-positive gate.
+         Auditing it must produce zero findings (PLAN.md, Sprint 3). */
+      :root { --ink: #16181d; --muted: #4a4f5a; --brand: #1f4fd8; --line: #d8dce4; }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        padding: 32px 24px;
+        font-family: system-ui, sans-serif;
+        font-size: 16px;
+        line-height: 1.5;
+        color: var(--ink);
+        background: #ffffff;
+      }
+      main { max-width: 640px; margin: 0 auto; }
+      h1 { font-size: 32px; margin: 0 0 16px; }
+      h2 { font-size: 24px; margin: 0 0 16px; }
+      p { margin: 0 0 16px; color: var(--ink); }
+      nav { margin: 0 0 32px; }
+      nav a { color: var(--brand); margin-right: 16px; font-size: 16px; }
+      .row { margin: 0 0 16px; }
+      .btn {
+        display: inline-block;
+        min-width: 160px;
+        min-height: 48px;
+        padding: 12px 24px;
+        border: 1px solid var(--brand);
+        border-radius: 8px;
+        background: var(--brand);
+        color: #ffffff;
+        font-size: 16px;
+        font-weight: 600;
+        cursor: pointer;
+      }
+      .btn.secondary { background: #ffffff; color: var(--brand); }
+      label { display: block; margin: 0 0 8px; font-size: 16px; color: var(--muted); }
+      input {
+        min-height: 48px;
+        width: 100%;
+        padding: 12px;
+        border: 1px solid var(--line);
+        border-radius: 8px;
+        font-size: 16px;
+        color: var(--ink);
+      }
+      input:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }
+      .btn:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+      footer { max-width: 640px; margin: 32px auto 0; color: var(--muted); font-size: 16px; }
     </style>
   </head>
   <body>
-    <header><h1>Control page</h1></header>
     <main>
-      <p>A clean page. Sprint 3 asserts that auditing this produces zero findings.</p>
-      <button type="button">Page button</button>
+      <nav aria-label="Main">
+        <a href="/features">Features</a>
+        <a href="/pricing">Pricing</a>
+        <a href="/docs">Documentation</a>
+      </nav>
+
+      <h1>Ship your work with confidence</h1>
+      <p>
+        This page is intentionally well built. It has one heading level per step, labelled
+        controls, adequate contrast and targets large enough to press.
+      </p>
+      <div class="row">
+        <button type="button" class="btn">Start a free trial</button>
+        <button type="button" class="btn secondary">Read the documentation</button>
+      </div>
+
+      <h2>Get product updates</h2>
+      <p>We send a short note when something meaningful changes.</p>
+      <form>
+        <label for="work-email">Work email</label>
+        <input id="work-email" name="email" type="email" autocomplete="email" />
+        <div class="row"><button type="submit" class="btn">Subscribe to updates</button></div>
+      </form>
+
+      <h2>Why teams choose it</h2>
+      <p>
+        Every measurement comes from the page itself, so a finding can be checked rather than
+        taken on trust.
+      </p>
+      <img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=" alt="" width="8" height="8" />
     </main>
+    <footer><p>Made for testing.</p></footer>
   </body>
 </html>

@@ -1,0 +1,21 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Responsive fixture</title>
+    <style>
+      body { margin: 0; padding: 24px; font-family: system-ui, sans-serif; font-size: 16px; color: #16181d; background: #fff; }
+      /* RESP-001 and RESP-002: wider than any viewport, and unable to reflow */
+      .too-wide { display: inline-block; width: 2200px; height: 120px; background: #eef2ff; }
+      /* RESP-003: only fires when the viewport is phone-sized */
+      .small-print { font-size: 9px; }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>Responsive fixture</h1>
+      <div class="too-wide">This block is wider than the viewport.</div>
+      <p class="small-print">Terms and conditions set in nine pixel type.</p>
+    </main>
+  </body>
+</html>

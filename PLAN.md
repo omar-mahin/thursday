@@ -340,13 +340,17 @@ confidence 1.0 — so Phase 2 adds findings to an existing schema rather than mi
 UI-004 visual hierarchy, value-proposition clarity, trust-signal analysis, unanswered objections,
 jargon detection, terminology consistency, hypothesis mode.
 
+**Shipped count: 30 rules** — 10 accessibility, 5 UI, 4 UX, 6 content, 2 conversion, 3 responsive.
+
 **Severity** is a pure function of rule + evidence, never of confidence (spec §22):
 `severity(ruleId, evidence) => Severity`.
 
 **Dedupe** (spec §34), in order:
 1. drop a finding whose element is an ancestor/descendant of another with the same `ruleId`, keeping the innermost
 2. exact merge on `(category, normalizedTitle, elementRef.resolved)`
-3. cap at 8 findings per element and 60 per audit, ranked by severity then rule specificity
+3. cap at 8 findings per element, 5 per rule and 60 per audit, ranked by severity then rule
+   specificity — the per-rule cap stops one noisy rule from burying the page, and the suppressed
+   count is always reported
 
 No embeddings, no semantic similarity — unnecessary when every finding comes from a known rule.
 (Step 3 of the spec's dedupe list — AI-vs-deterministic overlap — arrives with Phase 2.)
@@ -483,15 +487,42 @@ before a reload is found again through the ladder, and the panel says which rung
 - **Panel messages no longer route to "the active tab".** They route to the tab that is actually
   running Thursday, because switching tabs mid-audit sent messages to a page with no content script.
 
-### Sprint 3 — Rule engine (5–6 days) ← next
-Rule types, registry, engine, severity function, dedupe; contrast compositing with
-`indeterminate`; Flesch–Kincaid; color/typography clustering; **all 27 MVP rules** with a Vitest
-file each, including negative cases.
-**Done when:** every rule has passing tests; auditing `tests/fixtures/*.html` produces the expected
-finding set; auditing the clean control page produces **zero** findings. That last check is the
-false-positive gate and it is non-negotiable.
+### Sprint 3 — Rule engine ✅ complete
 
-### Sprint 4 — Findings UI (4–5 days)
+**Delivered.** Rule framework, flat registry, severity model, three-pass dedupe with caps, and the
+pure audit runner; contrast with alpha compositing and a first-class `indeterminate`;
+Flesch–Kincaid; robust spacing-scale fitting; colour and type clustering; **30 rules** across all
+six categories; the panel wired to run them.
+
+**Verified:** 253 unit tests and 36 Playwright tests. The E2E audit suite captures real snapshots
+from real Chromium over the production message path, then runs the pure engine on them in Node —
+so the browser is tested for measuring and the engine for judging. The clean control page produces
+**zero findings**; every planted defect on five defect fixtures is found; every finding carries
+non-empty evidence, impact and recommendation; no heuristic claims `high` or `critical`; and a
+login-page audit leaks none of the planted secrets.
+
+**Six rule defects the fixtures caught, all fixed:**
+1. **A11Y-004 flagged a 640 × 24 label.** The 44px recommendation is about compact controls, so it
+   now needs *both* dimensions under the threshold; the 24px WCAG floor still fails on one.
+2. **UX-004 flagged a `<label>`** for not looking clickable. A label is clickable by design and is
+   not meant to look like a button.
+3. **UI-002 missed a 19px gap and flagged a legitimate 8px one.** It was clustering repeated values,
+   so a step used once looked like an outlier. It now fits a step to the page (`fitScale`), because
+   a plain GCD is poisoned by the very outlier being reported: `gcd(16, 19) = 1`.
+4. **No step below 8px may be proposed.** With a 2px tolerance every integer is within 2 of a
+   multiple of 4, so "the page steps in 4s" is a claim that cannot be false.
+5. **CNT-003 extrapolated word counts from a 200-character sample** and under-counted dense copy by
+   40%. Word count is now measured during collection, where the full text exists.
+6. **One noisy rule could bury the page.** An unstyled form put six inputs under the target
+   minimum, pushing everything else down. Findings are now capped per rule as well as per element,
+   with the suppressed count reported.
+
+**Deliberately not built:** visual hierarchy, value-proposition clarity, trust signals, unanswered
+objections, jargon and terminology consistency. These need interpretation, and a thin regex
+pretending to measure them is exactly the shortcut this product exists to avoid. They wait for
+Phase 2.
+
+### Sprint 4 — Findings UI (4–5 days) ← next
 Side panel: category launcher, progress stages, grouped finding list, severity filters, finding
 detail card (spec §24), status transitions (open / accepted / dismissed / resolved), report
 membership, notes; pin overlay (numbered, severity-colored, `position:fixed` + transform,

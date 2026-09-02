@@ -1,0 +1,51 @@
+<!doctype html>
+<!-- Planted accessibility defects, one per rule. No lang attribute (A11Y-009). -->
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <title>Accessibility fixture</title>
+    <style>
+      body { margin: 0; padding: 24px; font-family: system-ui, sans-serif; font-size: 16px; background: #fff; }
+      /* A11Y-003: 2.8:1 on white */
+      .faint { color: #a0a0a0; }
+      /* A11Y-006: outline removed with nothing put back */
+      a:focus, button:focus { outline: none; }
+      /* Sized so these fields test labelling only, not target size. */
+      input { min-height: 32px; width: 260px; font-size: 16px; }
+      .tiny { width: 18px; height: 18px; padding: 0; font-size: 11px; }
+      .medium-target { width: 32px; height: 32px; }
+      .empty-btn { width: 32px; height: 32px; }
+    </style>
+  </head>
+  <body>
+    <h1>Accessibility fixture</h1>
+    <!-- A11Y-005: h1 -> h4 -->
+    <h4>Skipped a level</h4>
+
+    <!-- A11Y-001: no alt attribute, large -->
+    <img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=" width="240" height="180" />
+
+    <p class="faint">This paragraph does not have enough contrast against the page background.</p>
+
+    <form>
+      <!-- A11Y-002: no label -->
+      <input type="text" name="fullname" />
+      <!-- A11Y-002: placeholder only -->
+      <input type="email" name="email" placeholder="Email address" />
+      <!-- A11Y-007: empty button -->
+      <button type="button" class="empty-btn"></button>
+      <!-- A11Y-004: below the 24px floor -->
+      <button type="button" class="tiny">×</button>
+      <!-- A11Y-004: heuristic band, 24-44px -->
+      <button type="button" class="medium-target">i</button>
+    </form>
+
+    <!-- A11Y-008: duplicate id -->
+    <div id="panel">One</div>
+    <div id="panel">Two</div>
+
+    <!-- A11Y-010: positive tabindex. Inline in text, so target size does not apply. -->
+    <p>Jump to the <a href="/first" tabindex="3">first section</a> or the
+      <a href="/second" tabindex="2">second section</a>.</p>
+  </body>
+</html>

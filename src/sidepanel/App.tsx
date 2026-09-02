@@ -3,9 +3,10 @@ import { PRODUCT_NAME } from '../shared/constants/product';
 import { FLAGS } from '../shared/constants/flags';
 import { displayOrigin } from '../shared/utils/url';
 import { usePageConnection } from './state/usePageConnection';
+import { useAudit } from './state/useAudit';
 import { PageCard } from './components/PageCard';
 import { AuditLauncher } from './components/AuditLauncher';
-import { FindingsPlaceholder } from './components/FindingsPlaceholder';
+import { FindingsList } from './components/FindingsList';
 import { ElementInspector } from './components/ElementInspector';
 import { HoverReadout } from './components/HoverReadout';
 import { MessageLog } from './components/MessageLog';
@@ -14,6 +15,7 @@ type Tab = 'audit' | 'element';
 
 export function App(): React.ReactElement {
   const { page, log, send } = usePageConnection();
+  const audit = useAudit(page.snapshot, send);
   const [tab, setTab] = useState<Tab>('audit');
 
   // Picking an element is a request to look at it, so follow the user there.
@@ -78,8 +80,25 @@ export function App(): React.ReactElement {
               onStart={() => send({ type: 'START_SELECTION' })}
               onCancel={() => send({ type: 'CANCEL_SELECTION' })}
             />
-            <AuditLauncher activated={page.activated} />
-            <FindingsPlaceholder />
+            <AuditLauncher activated={page.activated} running={audit.running} onStart={audit.start} />
+            {audit.error ? (
+              <p className="hint" role="alert" style={{ color: 'var(--danger)' }}>
+                {audit.error}
+              </p>
+            ) : null}
+            {audit.result ? (
+              <FindingsList
+                result={audit.result}
+                onLocate={(finding) => {
+                  if (finding.elementRef) send({ type: 'FOCUS_ELEMENT', payload: { ref: finding.elementRef } });
+                }}
+              />
+            ) : (
+              <section>
+                <div className="section-title">Findings</div>
+                <div className="empty">No audit yet.</div>
+              </section>
+            )}
             {FLAGS.messageLog ? <MessageLog entries={log} /> : null}
           </div>
         ) : (
