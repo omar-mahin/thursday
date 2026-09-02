@@ -139,23 +139,24 @@ test('running a full audit from the panel shows findings and jumps to the elemen
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
 
-  // A finding has to answer what, why and what now.
-  const first = panel.locator('.finding').first();
-  await expect(first).toBeVisible();
-  await expect(panel.locator('.sev-chip').first()).toBeVisible();
-  await expect(first).toContainText('Evidence');
-  await expect(first).toContainText('Impact');
-  await expect(first).toContainText('Recommendation');
+  // The first finding opens automatically, and has to answer what, why and
+  // what now.
+  const detail = panel.locator('.detail');
+  await expect(detail).toBeVisible();
+  await expect(panel.locator('.filters .sev-chip').first()).toBeVisible();
+  await expect(detail).toContainText('Evidence');
+  await expect(detail).toContainText('Impact');
+  await expect(detail).toContainText('Recommendation');
 
-  // Severity ordering: the first finding is at least as severe as the last.
-  const severities = await panel.locator('.finding').evaluateAll((nodes) =>
+  // Severity ordering: the first row is at least as severe as the last.
+  const severities = await panel.locator('.finding-row').evaluateAll((nodes) =>
     nodes.map((node) => node.getAttribute('data-severity')),
   );
   const rank = ['info', 'low', 'medium', 'high', 'critical'];
   expect(rank.indexOf(severities[0]!)).toBeGreaterThanOrEqual(rank.indexOf(severities.at(-1)!));
 
   // And it can take us to the element it is about.
-  await first.getByRole('button', { name: 'Show on page' }).click();
+  await detail.getByRole('button', { name: 'Show on page' }).click();
   await expect(page.locator('thursday-root .hl-box')).toBeVisible();
 });
 
@@ -167,15 +168,13 @@ test('auditing one category runs only that category', async ({ openFixture, acti
 
   await panel.getByRole('button', { name: 'Content', exact: true }).click();
 
-  // The first finding is expanded by default, so its rule id is on screen.
-  const first = panel.locator('.finding').first();
-  await expect(first).toBeVisible();
-  await expect(first).toContainText('CNT-');
+  // The first finding opens automatically, so its rule id is on screen.
+  await expect(panel.locator('.detail')).toBeVisible();
+  await expect(panel.locator('.detail .mono')).toHaveText(/^CNT-/);
 
   // And nothing from another category leaked in: only content rules ran.
   const titles = await panel.locator('.finding-title').allInnerTexts();
   expect(titles.length).toBeGreaterThan(0);
-  await expect(panel.locator('.finding-meta .mono')).toHaveText(/^CNT-/);
 });
 
 test('a clean page reports that it found nothing, rather than showing an empty list', async ({

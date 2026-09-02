@@ -88,7 +88,10 @@ export function runAudit(
       createdAt: now,
       updatedAt: now,
     };
-    if (element) result.elementRef = referenceFromSnapshot(snapshot, element);
+    if (element) {
+      result.elementRef = referenceFromSnapshot(snapshot, element);
+      result.elementIndex = element.index;
+    }
     if (finding.measurements) result.measurements = finding.measurements;
     return result;
   });

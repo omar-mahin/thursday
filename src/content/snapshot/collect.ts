@@ -140,12 +140,22 @@ export type CollectOptions = {
   includeOffscreen: boolean;
 };
 
+export type Collected = {
+  snapshot: PageSnapshot;
+  /**
+   * The live elements behind the snapshot, index-aligned with
+   * `snapshot.elements`. Kept in the content script only -- it never crosses a
+   * port -- so pins and scroll-to-element resolve without re-querying the DOM.
+   */
+  elements: Element[];
+};
+
 /**
  * Builds the page snapshot: one read pass, then pure transformation. The result
  * is plain JSON (relationships are array indices, never object references) so it
  * survives structuredClone across a port and serializes into a saved audit.
  */
-export function collectSnapshot(options: CollectOptions): PageSnapshot {
+export function collectSnapshot(options: CollectOptions): Collected {
   const started = Date.now();
   const { elements: candidates, truncated: ceilingHit } = gatherCandidates();
   const measured = measureAll(candidates);
@@ -222,7 +232,7 @@ export function collectSnapshot(options: CollectOptions): PageSnapshot {
     return snapshot;
   });
 
-  return {
+  const snapshot: PageSnapshot = {
     capturedAt: started,
     durationMs: Date.now() - started,
     url: location.href,
@@ -243,4 +253,6 @@ export function collectSnapshot(options: CollectOptions): PageSnapshot {
     lang: document.documentElement.getAttribute('lang'),
     styleSheets: collectStyleSheetFacts(),
   };
+
+  return { snapshot, elements: visible.map((item) => item.element) };
 }

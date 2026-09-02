@@ -187,3 +187,56 @@ export const OVERLAY_CSS = `
 }
 .hl-size { opacity: 0.8; font-variant-numeric: tabular-nums; }
 `;
+
+/** Page pins. Positioned with transforms only, so page layout is untouched. */
+export const PIN_CSS = `
+.pin-layer {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
+
+.pin {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: grid;
+  place-items: center;
+  width: 22px;
+  height: 22px;
+  padding: 0;
+  border: 2px solid #fff;
+  border-radius: 50%;
+  font-size: 11px;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+  background: var(--thu-fg-dim);
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
+  pointer-events: auto;
+  cursor: pointer;
+  will-change: transform;
+}
+
+.pin[data-severity="critical"] { background: #d61f4e; }
+.pin[data-severity="high"]     { background: #d9622b; }
+.pin[data-severity="medium"]   { background: #b58100; }
+.pin[data-severity="low"]      { background: #3f6fb5; }
+.pin[data-severity="info"]     { background: #6b7280; }
+
+/* The "display: grid" above beats the user-agent [hidden] rule, so without
+   this a pin whose element scrolled away keeps rendering at its last spot. */
+.pin[hidden] { display: none; }
+
+.pin[data-approximate="true"] { border-style: dashed; }
+
+.pin[data-active="true"] {
+  outline: 3px solid var(--thu-accent);
+  outline-offset: 2px;
+  transform-origin: center;
+  z-index: 1;
+}
+
+.pin:hover { filter: brightness(1.12); }
+.pin:focus-visible { outline: 3px solid var(--thu-accent); outline-offset: 2px; }
+`;

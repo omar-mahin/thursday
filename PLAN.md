@@ -522,18 +522,43 @@ objections, jargon and terminology consistency. These need interpretation, and a
 pretending to measure them is exactly the shortcut this product exists to avoid. They wait for
 Phase 2.
 
-### Sprint 4 — Findings UI (4–5 days) ← next
-Side panel: category launcher, progress stages, grouped finding list, severity filters, finding
-detail card (spec §24), status transitions (open / accepted / dismissed / resolved), report
-membership, notes; pin overlay (numbered, severity-colored, `position:fixed` + transform,
-rAF scroll/resize recompute, offscreen culling, zero layout impact); scroll-to-element with
-resolution-confidence state; full keyboard nav, visible focus, ESC (spec §38 — an a11y tool that
-isn't accessible is indefensible).
-**Done when:** clicking a finding scrolls the page, flashes the element, opens the detail; pins
-survive scroll, resize, and SPA route changes; the entire panel is operable keyboard-only and
-passes its own audit.
+### Sprint 4 — Findings UI ✅ complete
 
-### Sprint 5 — Persistence, files & reports (3–4 days)
+**Delivered.** Grouped findings list (repeats of one rule collapse into one expandable row),
+severity filters, the finding detail card from spec §24, status transitions
+(open / accepted / dismissed / resolved), report membership and notes; numbered severity-coloured
+page pins with rAF scroll recompute, offscreen culling and zero layout impact; pin ↔ list
+numbering that matches in both directions; Escape to close; the panel's whole state as a pure
+reducer.
+
+**Verified:** 282 unit tests and 51 Playwright tests. Pins provably do not change page layout
+(`scrollWidth`/`scrollHeight`/body height identical before and after), follow the page as it
+scrolls, hide when their element leaves the viewport, and open the right finding when clicked.
+The panel is fully keyboard-operable, and **it passes its own contrast rule** — the E2E suite
+samples the panel's own computed colours and runs them through `contrastRatio`, so an
+accessibility tool that fails its own rules cannot ship.
+
+**Two bugs the tests caught:**
+1. **Hidden pins kept rendering at stale positions.** `.pin { display: grid }` overrides the
+   user-agent `[hidden]` rule, so `button.hidden = true` had no visual effect and off-screen pins
+   floated over the page at their last coordinates.
+2. **A build failure hid behind a suppressed command.** A CSS comment inside a template literal
+   used backticks, which closed the string; because the build output was piped to `/dev/null`, the
+   next test run silently used a stale bundle. Build output is no longer suppressed.
+
+**Design decisions:**
+- **Accepting a finding keeps it in the list.** Accepting is agreement that something is a
+  problem, not a statement that it is handled — only *dismissed* and *resolved* get out of the way.
+- **Closing the open finding advances the selection**, so the detail card never sits there showing
+  something the user has just dismissed.
+- **A finding with no element gets no pin.** A pin with nothing behind it is a lie about where the
+  problem is; page-level findings show `·` in the list instead of a number.
+- **Pins prefer the element measured during the audit** (O(1), and it reflects the page as it is
+  now); the resolution ladder is the fallback, and a pin found that way is drawn dashed because its
+  position is a guess.
+- Status, notes and report membership live in memory. Sprint 5 persists them.
+
+### Sprint 5 — Persistence, files & reports (3–4 days) ← next
 IndexedDB + migration runner; audit history per origin; screenshot crop + Blob storage; save/open
 `.thursday.json`; self-contained HTML report; data management in options (clear all, per-origin
 delete, storage usage); re-audit & compare if time allows.

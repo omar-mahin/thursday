@@ -1,12 +1,13 @@
 import { assertNever } from '../shared/result';
 import type { Envelope, ThursdayMessage, ToolbarAction } from '../shared/messaging/protocol';
 import { isEnvelope } from '../shared/messaging/protocol';
-import type { ElementReference, ResolutionLevel, Viewport } from '../shared/types';
+import type { ElementReference, Pin, ResolutionLevel, Viewport } from '../shared/types';
 import { describeElement, resolveReference } from '../audit/element/identity';
 import { getSetting, setSetting } from '../storage/settings';
 import { createHost, type ShadowHost } from './host';
 import { createHighlight, describeForLabel, type Highlight } from './overlay/highlight';
 import { createSelection, type Selection } from './selector/selection';
+import { createPinLayer, type PinLayer, type PinTarget } from './pins/pins';
 import { collectSnapshot } from './snapshot/collect';
 import { snapshotSingleElement } from './snapshot/element';
 import { toRect } from './snapshot/measure';
@@ -55,6 +56,9 @@ function install(): void {
   let toolbar: Toolbar | null = null;
   let highlight: Highlight | null = null;
   let selection: Selection | null = null;
+  let pins: PinLayer | null = null;
+  /** Live elements from the most recent snapshot, index-aligned with it. */
+  let measured: Element[] = [];
   let port: chrome.runtime.Port | null = null;
   /** The live element behind the current selection. Held directly, never
    *  re-queried, so identity cannot drift during a session. */
@@ -98,8 +102,13 @@ function install(): void {
         focusElement(message.payload.ref);
         return;
       case 'RENDER_PINS':
+        renderPins(message.payload.pins);
+        return;
       case 'CLEAR_PINS':
-        // Sprint 4.
+        pins?.clear();
+        return;
+      case 'SET_ACTIVE_FINDING':
+        pins?.setActive(message.payload.findingId);
         return;
       // Never sent to the page.
       case 'ACTIVATE_PAGE':
@@ -112,6 +121,7 @@ function install(): void {
       case 'SELECTION_STATE':
       case 'SNAPSHOT_READY':
       case 'AUDIT_PROGRESS':
+      case 'SET_ACTIVE_FINDING':
       case 'PIN_CLICKED':
       case 'ELEMENT_RESOLVED':
       case 'TOOLBAR_ACTION':
@@ -124,8 +134,11 @@ function install(): void {
 
   const sendSnapshot = (includeOffscreen: boolean): void => {
     try {
-      const snapshot = collectSnapshot({ includeOffscreen });
-      post({ type: 'SNAPSHOT_READY', payload: snapshot });
+      const collected = collectSnapshot({ includeOffscreen });
+      // Hold on to the live elements: pins and scroll-to-element then resolve
+      // in constant time instead of walking the resolution ladder.
+      measured = collected.elements;
+      post({ type: 'SNAPSHOT_READY', payload: collected.snapshot });
     } catch (error) {
       post({
         type: 'ERROR',
@@ -167,6 +180,23 @@ function install(): void {
     // live handle from this session is not a match worth qualifying, and saying
     // "found by id" for it would be a small lie.
     if (!live) post({ type: 'ELEMENT_RESOLVED', payload: { ref: reference, level } });
+  };
+
+  /**
+   * Draws the pins the panel asked for. Each pin prefers the element measured
+   * during the audit, and falls back to the resolution ladder when that element
+   * is gone -- a pin found that way is drawn dashed, because its position is a
+   * best guess rather than a measurement.
+   */
+  const renderPins = (requested: Pin[]): void => {
+    if (!pins) return;
+    const targets: PinTarget[] = requested.map((pin) => {
+      const fromAudit = measured[pin.elementIndex];
+      if (fromAudit?.isConnected) return { pin, element: fromAudit, approximate: false };
+      const resolved = resolveReference(pin.ref, document, (target) => toRect(target.getBoundingClientRect()));
+      return { pin, element: resolved.element, approximate: true };
+    });
+    pins.render(targets);
   };
 
   const connect = (): void => {
@@ -211,6 +241,7 @@ function install(): void {
     if (disposed) return;
     disposed = true;
     post({ type: 'DEACTIVATED' });
+    pins?.destroy();
     selection?.destroy();
     highlight?.destroy();
     toolbar?.destroy();
@@ -226,6 +257,7 @@ function install(): void {
 
   host = createHost();
   highlight = createHighlight(host.layer);
+  pins = createPinLayer(host.layer, (findingId) => post({ type: 'PIN_CLICKED', payload: { findingId } }));
   selection = createSelection(highlight, {
     onHover: (preview) => post({ type: 'ELEMENT_HOVERED', payload: { preview } }),
     onPick: emitSelection,

@@ -12,13 +12,16 @@ See [PLAN.md](PLAN.md) for the full engineering plan.
 
 ## Status
 
-Sprints 1–3 of 6 are complete. **Thursday audits pages now.**
+Sprints 1–4 of 6 are complete. **Thursday audits pages and marks them up.**
 
 - **Sprint 1** — extension foundation: on-demand injection, shadow-DOM toolbar, typed messaging, four privacy guards.
 - **Sprint 2** — inspection: click any element and read its measured facts (box, type, color, accessibility, reference), plus the page snapshot pipeline behind it.
 - **Sprint 3** — the rule engine: 30 deterministic rules across accessibility, UI, UX, content, conversion and responsive layout, each finding carrying its own evidence.
+- **Sprint 4** — the findings UI: numbered pins on the page, grouped and filterable findings, the detail card, statuses, notes and report membership.
 
-Next is Sprint 4: the findings UI proper — page pins, status transitions, filters.
+Next is Sprint 5: IndexedDB persistence, saving and re-opening `.thursday.json` audit files, and the self-contained HTML report.
+
+Nothing persists across a browser restart yet — that is Sprint 5.
 
 ## The rules
 

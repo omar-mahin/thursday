@@ -84,6 +84,12 @@ export type Finding = {
   impact: string;
   recommendation: string;
   elementRef?: ElementReference;
+  /**
+   * Index into the snapshot this finding came from. Valid for that snapshot
+   * only -- it is the fast path for pins in the current session, never an
+   * identity that survives a reload. `elementRef` is what persists.
+   */
+  elementIndex?: number;
   measurements?: Record<string, number | string | boolean>;
   status: FindingStatus;
   createdAt: number;
@@ -118,12 +124,22 @@ export type Audit = {
   elementsScanned: number;
 };
 
+/**
+ * A pin the page should draw.
+ *
+ * `elementIndex` is the fast path: right after an audit the content script still
+ * holds the live elements it measured, so a pin resolves in O(1). `ref` is the
+ * fallback for when that element is gone -- a reload, or an SPA that replaced
+ * the view -- and a pin resolved that way is drawn as approximate.
+ */
 export type Pin = {
   findingId: string;
   ordinal: number;
   severity: Severity;
-  rect: Rect;
-  approximate: boolean;
+  elementIndex: number;
+  /** Document-relative, so it survives scrolling. */
+  documentRect: Rect;
+  ref: ElementReference;
 };
 
 export type { ElementReference };

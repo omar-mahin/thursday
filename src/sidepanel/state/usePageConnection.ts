@@ -14,6 +14,8 @@ export type PageState = {
   selecting: boolean;
   hovered: ElementPreview | null;
   selection: SelectedElement | null;
+  /** Last pin the user clicked on the page. */
+  pinClicked: { findingId: string; at: number } | null;
   /** Which rung of the resolution ladder last found the selected element. */
   resolution: ResolutionLevel | null | 'unresolved';
   snapshot: PageSnapshot | null;
@@ -31,6 +33,7 @@ const INITIAL: PageState = {
   selecting: false,
   hovered: null,
   selection: null,
+  pinClicked: null,
   resolution: null,
   snapshot: null,
 };
@@ -126,9 +129,14 @@ export function usePageConnection(): {
             error: message.payload.detail ?? USER_MESSAGES[message.payload.code],
           }));
           return;
-        // Sprints 3-4 wire these up.
-        case 'AUDIT_PROGRESS':
         case 'PIN_CLICKED':
+          // Stamped so two clicks on the same pin still register.
+          setPage((state) => ({
+            ...state,
+            pinClicked: { findingId: message.payload.findingId, at: Date.now() },
+          }));
+          return;
+        case 'AUDIT_PROGRESS':
           return;
         // Panel-to-page only.
         case 'ACTIVATE_PAGE':
@@ -140,6 +148,7 @@ export function usePageConnection(): {
         case 'REQUEST_SNAPSHOT':
         case 'RENDER_PINS':
         case 'CLEAR_PINS':
+        case 'SET_ACTIVE_FINDING':
         case 'FOCUS_ELEMENT':
           return;
         default:

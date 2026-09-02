@@ -208,6 +208,7 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'AUDIT_PROGRESS':
     case 'RENDER_PINS':
     case 'CLEAR_PINS':
+    case 'SET_ACTIVE_FINDING':
     case 'FOCUS_ELEMENT':
       return;
     default:
@@ -235,6 +236,7 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'REQUEST_SNAPSHOT':
     case 'RENDER_PINS':
     case 'CLEAR_PINS':
+    case 'SET_ACTIVE_FINDING':
     case 'FOCUS_ELEMENT': {
       const tabId = await targetTab();
       if (tabId === undefined || !toContent(tabId, message)) panelError('NOT_ACTIVATED');

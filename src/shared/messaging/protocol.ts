@@ -45,6 +45,8 @@ export type ThursdayMessage =
   | { type: 'RENDER_PINS'; payload: { pins: Pin[] } }
   | { type: 'CLEAR_PINS' }
   | { type: 'PIN_CLICKED'; payload: { findingId: string } }
+  /** Panel -> page: which finding is open, so its pin can stand out. */
+  | { type: 'SET_ACTIVE_FINDING'; payload: { findingId: string | null } }
   | { type: 'FOCUS_ELEMENT'; payload: { ref: ElementReference } }
   | { type: 'ELEMENT_RESOLVED'; payload: { ref: ElementReference; level: ResolutionLevel | null } }
   // -- toolbar intents -------------------------------------------------------

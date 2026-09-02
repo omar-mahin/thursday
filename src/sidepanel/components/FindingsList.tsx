@@ -1,133 +1,162 @@
 import { useState } from 'react';
-import type { AuditResult } from '../../audit/engine/run';
-import { countBySeverity } from '../../audit/engine/run';
-import { CATEGORY_LABELS } from '../../audit/engine/registry';
 import { SEVERITY_LABELS } from '../../audit/engine/severity';
-import type { Finding, Severity } from '../../shared/types';
+import { ruleById } from '../../audit/engine/registry';
+import type { Severity } from '../../shared/types';
+import { groupByRule, type FindingGroup, type FindingView } from '../state/findings';
 
 const ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
 
-const TYPE_NOTE: Record<Finding['type'], string> = {
-  rule: 'Measured',
-  heuristic: 'Heuristic',
-  inference: 'Inference',
-  recommendation: 'Suggestion',
-};
-
 /**
- * Sprint 3's findings view: enough to read and act on a finding. The rich card,
- * page pins and status transitions arrive in Sprint 4.
+ * The findings list: repeats of one rule are grouped, because eight separate
+ * "target too small" rows push the unlabelled control off the screen.
  */
 export function FindingsList({
-  result,
-  onLocate,
+  views,
+  counts,
+  severities,
+  showClosed,
+  closedCount,
+  selectedId,
+  ordinals,
+  onSelect,
+  onToggleSeverity,
+  onShowClosed,
 }: {
-  result: AuditResult;
-  onLocate(finding: Finding): void;
+  views: FindingView[];
+  counts: Record<Severity, number>;
+  severities: Severity[];
+  showClosed: boolean;
+  closedCount: number;
+  selectedId: string | null;
+  ordinals: Map<string, number>;
+  onSelect(id: string): void;
+  onToggleSeverity(severity: Severity): void;
+  onShowClosed(value: boolean): void;
 }): React.ReactElement {
-  const counts = countBySeverity(result.findings);
-  const [open, setOpen] = useState<string | null>(result.findings[0]?.id ?? null);
-
-  if (result.findings.length === 0) {
-    return (
-      <section>
-        <div className="section-title">Findings</div>
-        <div className="empty">
-          Nothing found in {result.audit.categories.length} categor
-          {result.audit.categories.length === 1 ? 'y' : 'ies'} across {result.audit.elementsScanned} elements.
-        </div>
-      </section>
-    );
-  }
+  const groups = groupByRule(views);
 
   return (
-    <section>
-      <div className="spread">
-        <div className="section-title" style={{ margin: 0 }}>
-          Findings
-        </div>
-        <span className="dim mono">{result.findings.length}</span>
-      </div>
-
-      <div className="sev-row">
-        {ORDER.filter((severity) => counts[severity] > 0).map((severity) => (
-          <span key={severity} className="sev-chip" data-severity={severity}>
-            <span className="dot" />
-            {counts[severity]} {SEVERITY_LABELS[severity]}
-          </span>
-        ))}
-      </div>
-
-      <ul className="findings">
-        {result.findings.map((finding) => (
-          <li key={finding.id} className="finding" data-severity={finding.severity}>
+    <section aria-label="Findings">
+      <div className="filters" role="group" aria-label="Filter by severity">
+        {ORDER.filter((severity) => counts[severity] > 0).map((severity) => {
+          const active = severities.length === 0 || severities.includes(severity);
+          return (
             <button
+              key={severity}
               type="button"
-              className="finding-head"
-              aria-expanded={open === finding.id}
-              onClick={() => setOpen(open === finding.id ? null : finding.id)}
+              className="sev-chip"
+              data-severity={severity}
+              data-off={String(!active)}
+              aria-pressed={severities.includes(severity)}
+              onClick={() => onToggleSeverity(severity)}
             >
-              <span className="finding-sev" data-severity={finding.severity}>
-                {SEVERITY_LABELS[finding.severity]}
-              </span>
-              <span className="finding-title">{finding.title}</span>
+              <span className="dot" />
+              {counts[severity]} {SEVERITY_LABELS[severity]}
             </button>
+          );
+        })}
+      </div>
 
-            {open === finding.id ? (
-              <div className="finding-body">
-                <p className="finding-summary">{finding.summary}</p>
-
-                <div className="finding-meta">
-                  <span className="badge">{CATEGORY_LABELS[finding.category]}</span>
-                  <span className="badge">{TYPE_NOTE[finding.type]}</span>
-                  <span className="badge mono">{finding.ruleId}</span>
-                </div>
-
-                <div className="finding-block">
-                  <h3>Evidence</h3>
-                  <ul>
-                    {finding.evidence.map((line) => (
-                      <li key={line}>{line}</li>
-                    ))}
-                  </ul>
-                </div>
-
-                <div className="finding-block">
-                  <h3>Impact</h3>
-                  <p>{finding.impact}</p>
-                </div>
-
-                <div className="finding-block">
-                  <h3>Recommendation</h3>
-                  <p>{finding.recommendation}</p>
-                </div>
-
-                {finding.elementRef ? (
-                  <button type="button" onClick={() => onLocate(finding)}>
-                    Show on page
-                  </button>
-                ) : (
-                  <p className="hint" style={{ margin: 0 }}>
-                    This finding is about the page as a whole.
-                  </p>
-                )}
-              </div>
-            ) : null}
-          </li>
-        ))}
-      </ul>
-
-      {result.suppressed > 0 ? (
-        <p className="hint">{result.suppressed} lower-ranked findings were not shown.</p>
+      {closedCount > 0 ? (
+        <label className="closed-toggle">
+          <input type="checkbox" checked={showClosed} onChange={(event) => onShowClosed(event.currentTarget.checked)} />
+          Show {closedCount} dismissed or resolved
+        </label>
       ) : null}
-      {result.audit.truncated ? (
-        <p className="hint">
-          The page was larger than the element budget, so some elements were not scanned.
-        </p>
-      ) : null}
-      {result.failedRules.length > 0 ? (
-        <p className="hint">Rules that could not run: {result.failedRules.join(', ')}.</p>
-      ) : null}
+
+      {views.length === 0 ? (
+        <div className="empty">Nothing matches the current filter.</div>
+      ) : (
+        <ul className="findings">
+          {groups.map((group) => (
+            <Group
+              key={group.ruleId}
+              group={group}
+              selectedId={selectedId}
+              ordinals={ordinals}
+              onSelect={onSelect}
+            />
+          ))}
+        </ul>
+      )}
     </section>
+  );
+}
+
+function Group({
+  group,
+  selectedId,
+  ordinals,
+  onSelect,
+}: {
+  group: FindingGroup;
+  selectedId: string | null;
+  ordinals: Map<string, number>;
+  onSelect(id: string): void;
+}): React.ReactElement {
+  const single = group.views.length === 1;
+  const containsSelection = group.views.some((view) => view.finding.id === selectedId);
+  const [expanded, setExpanded] = useState(false);
+  const open = expanded || containsSelection;
+
+  if (single) {
+    const view = group.views[0]!;
+    return <li>{row(view, selectedId, ordinals, onSelect)}</li>;
+  }
+
+  const description = ruleById(group.ruleId)?.description ?? group.ruleId;
+  return (
+    <li className="finding group" data-severity={group.severity}>
+      <button
+        type="button"
+        className="finding-head"
+        aria-expanded={open}
+        onClick={() => setExpanded(!open)}
+      >
+        <span className="finding-sev" data-severity={group.severity}>
+          {SEVERITY_LABELS[group.severity]}
+        </span>
+        <span className="finding-title">
+          {group.views.length} × {description}
+        </span>
+        <span className="dim mono">{group.ruleId}</span>
+      </button>
+      {open ? (
+        <ul className="group-items">
+          {group.views.map((view) => (
+            <li key={view.finding.id}>{row(view, selectedId, ordinals, onSelect)}</li>
+          ))}
+        </ul>
+      ) : null}
+    </li>
+  );
+}
+
+function row(
+  view: FindingView,
+  selectedId: string | null,
+  ordinals: Map<string, number>,
+  onSelect: (id: string) => void,
+): React.ReactElement {
+  const ordinal = ordinals.get(view.finding.id);
+  const selected = view.finding.id === selectedId;
+  return (
+    <button
+      type="button"
+      className="finding-row"
+      data-severity={view.finding.severity}
+      data-selected={String(selected)}
+      data-status={view.status}
+      data-finding-id={view.finding.id}
+      aria-current={selected ? 'true' : undefined}
+      onClick={() => onSelect(view.finding.id)}
+    >
+      <span className="row-pin" data-severity={view.finding.severity}>
+        {ordinal ?? '·'}
+      </span>
+      <span className="finding-title">{view.finding.title}</span>
+      {view.inReport ? <span className="row-flag" title="In report">★</span> : null}
+      {view.status !== 'open' ? <span className="row-status">{view.status}</span> : null}
+    </button>
   );
 }
