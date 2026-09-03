@@ -742,11 +742,25 @@ is no coverage to have missed.
   artifact does not either. None of those identifiers appears in the current
   build, React included.
 
-**Process fix.** Running Playwright directly rather than through the npm script
-skipped the `dist-test/` copy, so the suite could quietly test the previous
-build. That cost real time twice, once chasing a CSS fix that was already
-correct. It is now a Playwright `globalSetup`, so a stale artifact is not
-something anyone has to remember.
+**Two process fixes.**
+
+- Running Playwright directly rather than through the npm script skipped the
+  `dist-test/` copy, so the suite could quietly test the previous build. That
+  cost real time twice, once chasing a CSS fix that was already correct. It is
+  now a Playwright `globalSetup`, so a stale artifact is not something anyone
+  has to remember.
+- A test written in this sprint flaked. `dedupe`'s new performance guard
+  compared `time(2000)` against `time(200)`, and with both measurements under a
+  millisecond the ratio swung wildly whenever the machine was busy -- it failed
+  during a full `npm test`, where the browser suite was competing for the CPU.
+  A ratio between two tiny numbers is not a property; it is noise with a
+  threshold attached. It now measures 5000 findings once against a single
+  absolute budget of 200ms. The linear implementation takes 9ms and the
+  pair-comparing one it replaced takes ~830ms for the same input, so the budget
+  sits between them with room on both sides.
+  Playwright now also writes a JSON report and keeps a trace and screenshot on
+  failure, because the first thing that went wrong with the earlier flake was
+  losing which test it was to a shell pipeline.
 
 **Not automated, and stated as such:** the popup's *successful* activation
 depends on the `activeTab` grant that comes from clicking the browser action,
