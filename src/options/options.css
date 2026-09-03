@@ -4,10 +4,24 @@ body { padding: 28px 20px; }
 .field { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 9px 0; border-bottom: 1px solid var(--line); }
 .field:last-child { border-bottom: 0; }
 .field-label { font-weight: 500; }
-.privacy li { margin-bottom: 4px; }
-.privacy ul { margin: 6px 0 0; padding-left: 18px; }
+/* On the page's own 8px scale: 4px and 6px put UI-002 on our own settings
+   page, which is a small thing to be caught by your own rule about. */
+.privacy li { margin-bottom: 8px; }
+.privacy ul { margin: 8px 0 0; padding-left: 18px; }
 
-.switch { display: inline-flex; align-items: center; gap: 7px; font-size: 12px; white-space: nowrap; }
+/*
+ * The whole label is the target, because clicking anywhere in it toggles the
+ * control -- so it carries the 24px floor rather than the 16px box inside it.
+ */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 24px;
+  font-size: 12px;
+  white-space: nowrap;
+  cursor: pointer;
+}
 .switch input { width: 16px; height: 16px; accent-color: var(--accent); }
 .origins { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 5px; }
 .origins li {

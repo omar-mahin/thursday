@@ -256,8 +256,16 @@ function audit(value: unknown): Audit | null {
     findingIds: strList(value['findingIds']),
     truncated: bool(value['truncated']),
     elementsScanned: Math.max(0, num(value['elementsScanned'])),
+    framesNotInspected: {
+      crossOrigin: Math.max(0, num(frames(value)['crossOrigin'])),
+      sameOrigin: Math.max(0, num(frames(value)['sameOrigin'])),
+    },
   };
 }
+
+/** Older files predate the frame counts; zero is the honest default. */
+const frames = (value: Record<string, unknown>): Record<string, unknown> =>
+  isObject(value['framesNotInspected']) ? value['framesNotInspected'] : {};
 
 function digestOf(value: unknown, fallback: Audit): PageSnapshotDigest {
   const source = isObject(value) ? value : {};

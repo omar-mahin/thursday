@@ -120,6 +120,7 @@ export function snapshot(elements: ElementSnapshot[], overrides: Partial<PageSna
     elements: elements.map((item, position) => ({ ...item, index: position })),
     truncated: false,
     crossOriginFrames: 0,
+    sameOriginFrames: 0,
     lang: 'en',
     styleSheets: {
       readableSheets: 1,

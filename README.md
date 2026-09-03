@@ -12,16 +12,18 @@ See [PLAN.md](PLAN.md) for the full engineering plan.
 
 ## Status
 
-Sprints 1–5 of 6 are complete. **Thursday audits pages, marks them up, keeps the results and
-tells you what changed.**
+**All six sprints are complete.** Thursday audits pages, marks them up, keeps the results, tells
+you what changed, and passes its own rules.
 
 - **Sprint 1** — extension foundation: on-demand injection, shadow-DOM toolbar, typed messaging, four privacy guards.
 - **Sprint 2** — inspection: click any element and read its measured facts (box, type, color, accessibility, reference), plus the page snapshot pipeline behind it.
 - **Sprint 3** — the rule engine: 30 deterministic rules across accessibility, UI, UX, content, conversion and responsive layout, each finding carrying its own evidence.
 - **Sprint 4** — the findings UI: numbered pins on the page, grouped and filterable findings, the detail card, statuses, notes and report membership.
 - **Sprint 5** — persistence and files: audits survive a restart, save and reopen as `.thursday.json`, export as a self-contained HTML report, and re-audit to see what was fixed.
+- **Sprint 6** — hardening and ship: both end-to-end flows tested, performance budgets, packaging, and Thursday audited by Thursday.
 
-Next is Sprint 6: hardening, performance and packaging for the store.
+**402 unit tests and 102 Playwright tests.** [STORE_LISTING.md](STORE_LISTING.md) holds the
+submission copy, the permission justifications and the data disclosures.
 
 ## Keeping an audit
 
@@ -64,6 +66,17 @@ Three things the rules will not do: report a contrast ratio it cannot actually c
 "could not be verified", and why), call a heuristic a WCAG violation, or claim a spacing scale
 exists when the page has none.
 
+## Thursday audits itself
+
+Spec §38 says an accessibility tool that fails its own rules cannot ship, so the test suite serves
+the real markup and real stylesheet of the panel, the popup, the settings page and the exported
+report as pages, and runs the whole thirty-rule engine over them.
+
+It works. The first run found **eighteen defects in Thursday's own UI** — severity labels at
+3.33:1, five targets under the WCAG 24px floor, 11px metadata — and **two defects in the rules**
+that would have fired on most real websites. All are fixed; what remains is a short, recorded list
+of accepted `low` findings, and anything new fails the build.
+
 ## Run it
 
 ```bash
@@ -75,12 +88,16 @@ Then in Chrome:
 
 1. `chrome://extensions` → enable **Developer mode**
 2. **Load unpacked** → select the `dist/` folder
-3. Open any website, click the Thursday icon, then **Activate on this page**
+3. Open any website, click the Thursday icon, then **Activate on this page** — or press
+   <kbd>Alt</kbd>+<kbd>Shift</kbd>+<kbd>T</kbd>
 
 The floating toolbar appears on the page and the audit panel opens beside it.
 
-Nothing is injected until you click Activate, so the toolbar does not survive a reload — that is
-the cost of asking for no host permissions, and it is deliberate.
+Nothing is injected until you ask, so the toolbar does not survive a reload — that is the cost of
+asking for no host permissions, and it is deliberate. The keyboard shortcut makes restarting one
+keystroke.
+
+To build the store upload: `npm run package` writes `release/thursday-<version>.zip`.
 
 ## Scripts
 
@@ -92,6 +109,8 @@ the cost of asking for no host permissions, and it is deliberate.
 | `npm run guard` | Static privacy guards (see below) |
 | `npm run test:unit` | Vitest — pure logic |
 | `npm run test:e2e` | Playwright — real Chromium with the extension loaded |
+| `npm run size` | Bundle check: allowed files, size budgets, no network APIs in the shipped bytes |
+| `npm run package` | Builds, checks, and zips `dist/` into `release/` |
 | `npm run build:test` | Test-only build with wider host access (see below) |
 | `npm test` | All of the above, in order |
 
@@ -99,12 +118,13 @@ First E2E run needs a browser: `npx playwright install chromium`.
 
 ## The privacy guards
 
-Four checks turn the promises in PLAN.md section 1 into properties:
+Five checks turn the promises in PLAN.md section 1 into properties:
 
 1. **No network APIs in `src/`** — `npm run guard` fails on `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, `importScripts`.
 2. **No form-value reads in `src/content/`** — the content script has no code path that can read what you typed.
 3. **Manifest shape** — `tests/unit/manifest.test.ts` asserts exactly four permissions, no host permissions, no content scripts, no web-accessible resources, no external connectability.
-4. **Zero requests at runtime** — `tests/e2e/network.spec.ts` exercises the whole extension in real Chromium and asserts the browser made no request outside the local fixture and the extension's own pages.
+4. **Zero requests at runtime** — `tests/e2e/network.spec.ts` exercises the whole extension in real Chromium — including storing an audit, writing both file formats, reading one back and comparing two audits — and asserts the browser made no request outside the local fixture and the extension's own pages.
+5. **Nothing in the shipped bytes** — `npm run size` fails if any of those identifiers appears in the built bundle, dependencies included. Guards 1–3 are about our source; a dependency could have brought a network call with it. None does.
 
 Widening any of these has to break a test.
 
@@ -129,6 +149,6 @@ src/popup/             activation entry point (the only place that can grant act
 src/options/           settings and data management
 src/shared/            types, message protocol, constants, utilities
 src/storage/           settings, IndexedDB and its migrations, the audit file format
-scripts/               icon generator, privacy guard
+scripts/               icon generator, privacy guard, bundle check, packaging
 tests/                 unit (Vitest) · fixtures · e2e (Playwright)
 ```

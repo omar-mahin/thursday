@@ -228,6 +228,70 @@ describe('A11Y-004 touch targets', () => {
     const disabled = named('Buy', { tagName: 'button', interactive: true, disabled: true, rect: { x: 0, y: 0, width: 10, height: 10 } });
     expect(run(smallTouchTarget, snapshot([disabled]))).toEqual([]);
   });
+
+  it('measures a wrapped checkbox by its label, which is the real target', () => {
+    // Clicking anywhere in the label toggles the control, so the label is the
+    // target WCAG 2.5.8 measures. Saying otherwise would fire on very nearly
+    // every checkbox on the web. Found by auditing Thursday's own settings.
+    resetIndexes();
+    const wrapper = element({
+      tagName: 'label',
+      rect: { x: 0, y: 0, width: 180, height: 28 },
+      documentRect: { x: 0, y: 0, width: 180, height: 28 },
+    });
+    const box = element({
+      tagName: 'input',
+      parent: wrapper.index,
+      interactive: true,
+      rect: { x: 0, y: 6, width: 16, height: 16 },
+      documentRect: { x: 0, y: 6, width: 16, height: 16 },
+      form: { type: 'checkbox', required: false, labelledBy: 'label-wrapped' },
+    });
+    expect(run(smallTouchTarget, snapshot([wrapper, box]))).toEqual([]);
+  });
+
+  it('still flags a checkbox whose label is no bigger than the control', () => {
+    // A label sized to its control adds nothing, and taking it anyway would
+    // hide a real defect.
+    resetIndexes();
+    const wrapper = element({
+      tagName: 'label',
+      rect: { x: 0, y: 0, width: 16, height: 16 },
+      documentRect: { x: 0, y: 0, width: 16, height: 16 },
+    });
+    const box = element({
+      tagName: 'input',
+      parent: wrapper.index,
+      interactive: true,
+      rect: { x: 0, y: 0, width: 16, height: 16 },
+      documentRect: { x: 0, y: 0, width: 16, height: 16 },
+      form: { type: 'checkbox', required: false, labelledBy: 'label-wrapped' },
+    });
+    expect(run(smallTouchTarget, snapshot([wrapper, box]))).toHaveLength(1);
+  });
+
+  it('does not borrow a label the control is not inside', () => {
+    resetIndexes();
+    const box = element({
+      tagName: 'input',
+      interactive: true,
+      rect: { x: 0, y: 0, width: 16, height: 16 },
+      documentRect: { x: 0, y: 0, width: 16, height: 16 },
+      form: { type: 'checkbox', required: false, labelledBy: 'label-for' },
+    });
+    expect(run(smallTouchTarget, snapshot([box]))).toHaveLength(1);
+  });
+
+  it('says nothing about a visually-hidden control', () => {
+    // The sr-only pattern is on most real sites -- skip links, live regions,
+    // the file input behind a styled button. With border-box a 1px input with
+    // a 1px border measures 2 x 2. Found by auditing Thursday's own panel.
+    expect(run(smallTouchTarget, snapshot([target(2, 2)]))).toEqual([]);
+  });
+
+  it('still flags a control that is small but visible', () => {
+    expect(run(smallTouchTarget, snapshot([target(10, 10)]))).toHaveLength(1);
+  });
 });
 
 describe('A11Y-005 heading hierarchy', () => {

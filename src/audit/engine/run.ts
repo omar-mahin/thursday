@@ -115,6 +115,10 @@ export function runAudit(
     findingIds: findings.map((finding) => finding.id),
     truncated: snapshot.truncated,
     elementsScanned: candidates.length,
+    framesNotInspected: {
+      crossOrigin: snapshot.crossOriginFrames,
+      sameOrigin: snapshot.sameOriginFrames,
+    },
   };
 
   return {

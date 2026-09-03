@@ -1,8 +1,63 @@
+import type { ElementSnapshot, PageSnapshot, Rect } from '../../../shared/types';
 import type { Rule } from '../../types';
 import { finding, label } from '../../types';
 
 /** WCAG 2.5.8 (AA) requires 24x24. 44x44 is the usability recommendation. */
 const WCAG_MINIMUM = 24;
+
+/**
+ * Below this, an element is not a target that got too small -- it is one that
+ * was never meant to be seen.
+ *
+ * The visually-hidden pattern (`clip-path: inset(50%)` on a 1px box, or a
+ * `sr-only` class) is everywhere: skip links, live regions, and the file input
+ * behind a styled "Choose file" button. With `box-sizing: border-box` a 1px
+ * input with a 1px border measures 2 x 2. Telling someone to give that 24px is
+ * advice they cannot act on, and it would fire on most real websites -- which
+ * is how it was found: on Thursday's own panel, whose file input is exactly
+ * this pattern.
+ *
+ * A genuinely broken control collapsed to a few pixels is a real defect, but it
+ * is not a target-size defect, and A11Y-004 is not the rule that should claim
+ * to have found it.
+ */
+const VISUALLY_HIDDEN_CEILING = 4;
+
+/** How far up to look for a wrapping label. Deeper than that is not a label. */
+const LABEL_SEARCH_HOPS = 4;
+
+/**
+ * The box a pointer actually has to hit.
+ *
+ * A form control inside a `<label>` is activated by clicking anywhere in that
+ * label, so the label is the target -- which is what WCAG 2.5.8 measures. A
+ * 16px checkbox with a 200px label beside it is not a 16px target, and saying
+ * so would fire on very nearly every checkbox on the web. Found by auditing
+ * Thursday's own settings page, whose two toggles are exactly this pattern.
+ *
+ * The test is structural -- is there a label around it -- and deliberately not
+ * "did the accessible name come from a wrapping label". Those differ: a control
+ * with an `aria-label` takes its name from the attribute while still being
+ * activated by the label around it, and the first version of this check missed
+ * exactly that case on Thursday's own settings page.
+ */
+export function targetBox(snapshot: PageSnapshot, element: ElementSnapshot): Rect {
+  if (!element.form) return element.rect;
+  let parent = element.parent === null ? undefined : snapshot.elements[element.parent];
+  let hops = 0;
+  while (parent && hops < LABEL_SEARCH_HOPS) {
+    if (parent.tagName === 'label') {
+      // Only when the label really is bigger: a label sized to its control
+      // adds nothing, and taking it anyway would hide a genuine defect.
+      const bigger =
+        parent.rect.width >= element.rect.width && parent.rect.height >= element.rect.height;
+      return bigger ? parent.rect : element.rect;
+    }
+    parent = parent.parent === null ? undefined : snapshot.elements[parent.parent];
+    hops += 1;
+  }
+  return element.rect;
+}
 
 /**
  * A11Y-004 - interactive target smaller than the configured minimum.
@@ -19,7 +74,7 @@ export const smallTouchTarget: Rule = {
   kind: 'heuristic',
   scope: 'element',
   description: 'Interactive targets should be large enough to hit reliably',
-  run({ candidates, settings }) {
+  run({ candidates, settings, snapshot }) {
     const results = [];
     for (const element of candidates) {
       if (!element.interactive) continue;
@@ -27,7 +82,9 @@ export const smallTouchTarget: Rule = {
       // Inline links inside a paragraph are sized by the text, not by design.
       if (element.tagName === 'a' && element.parent !== null && element.styles.display === 'inline') continue;
 
-      const { width, height } = element.rect;
+      const { width, height } = targetBox(snapshot, element);
+      // Deliberately hidden rather than badly sized. See above.
+      if (width <= VISUALLY_HIDDEN_CEILING && height <= VISUALLY_HIDDEN_CEILING) continue;
       const smallest = Math.min(width, height);
       // WCAG 2.5.8 asks whether a 24px square fits inside the target, so one
       // short dimension is enough to fail it.

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { PRODUCT_NAME } from '../shared/constants/product';
+import { ACTIVATE_SHORTCUT, PRODUCT_NAME } from '../shared/constants/product';
 import { sendCommand } from '../shared/messaging/port';
 import type { Result } from '../shared/result';
 import { USER_MESSAGES } from '../shared/result';
@@ -117,7 +117,14 @@ export function Popup(): React.ReactElement {
       ) : null}
 
       <div className="popup-foot">
-        <div>Runs locally. No account, no network.</div>
+        <div>
+          Runs locally. No account, no network.
+          {/* Worth saying here: a reload drops the content script, and this
+              turns restarting into one keystroke. */}
+          <div className="hint" style={{ marginTop: 2 }}>
+            Shortcut: <span className="mono">{ACTIVATE_SHORTCUT}</span>
+          </div>
+        </div>
         <button type="button" onClick={() => void chrome.runtime.openOptionsPage()}>
           Settings
         </button>

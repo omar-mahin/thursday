@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { manifest, REQUIRED_PERMISSIONS } from '../../manifest.config';
+import { ACTIVATE_COMMAND, ACTIVATE_SHORTCUT } from '../../src/shared/constants/product';
 
 /**
  * Guard 3 (PLAN.md section 7). The permission set is a product promise, so
@@ -52,5 +53,34 @@ describe('the shipped build against the test build', () => {
 
   it('relies on activeTab for tab capture', () => {
     expect(manifest.permissions).toContain('activeTab');
+  });
+});
+
+/**
+ * The keyboard shortcut is the only activation path a keyboard user can reach
+ * without a pointer, and it grants activeTab the same way the action click
+ * does -- so it must not need a permission of its own.
+ */
+describe('the keyboard shortcut', () => {
+  const commands = (manifest as unknown as Record<string, Record<string, unknown>>)['commands'];
+
+  it('declares exactly one command', () => {
+    expect(Object.keys(commands ?? {})).toEqual([ACTIVATE_COMMAND]);
+  });
+
+  it('suggests the shortcut the popup and options pages promise', () => {
+    // Three copies of a key combination is three chances to describe a
+    // shortcut the user does not actually have.
+    const command = commands?.[ACTIVATE_COMMAND] as { suggested_key?: { default?: string } } | undefined;
+    expect(command?.suggested_key?.default).toBe(ACTIVATE_SHORTCUT);
+  });
+
+  it('describes itself, because Chrome shows this in the shortcuts page', () => {
+    const command = commands?.['activate-page'] as { description?: string } | undefined;
+    expect(command?.description).toContain('Thursday');
+  });
+
+  it('adds no permission', () => {
+    expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting', 'sidePanel']);
   });
 });

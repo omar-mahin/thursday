@@ -114,6 +114,17 @@ function notices(input: ReportInput): string {
       `This page had more elements than one pass examines, so ${input.digest.elementCount} were measured and the rest were not. Findings below are complete for what was examined, not for the whole page.`,
     );
   }
+  const { crossOrigin, sameOrigin } = input.audit.framesNotInspected;
+  const frames = crossOrigin + sameOrigin;
+  if (frames > 0) {
+    lines.push(
+      `${frames} embedded frame${frames === 1 ? '' : 's'}${
+        crossOrigin > 0 && sameOrigin > 0 ? ` (${crossOrigin} from another origin)` : ''
+      } ${frames === 1 ? 'was' : 'were'} enumerated but not looked inside. Nothing within ${
+        frames === 1 ? 'it' : 'them'
+      } is covered by this report.`,
+    );
+  }
   if (input.omitted && input.omitted > 0) {
     lines.push(
       `${input.omitted} further finding${input.omitted === 1 ? ' was' : 's were'} produced by this audit but not selected for this report.`,

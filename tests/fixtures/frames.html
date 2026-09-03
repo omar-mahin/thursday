@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>A page built out of frames</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #ffffff;
+        color: #16181d;
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+      h1 { font-size: 28px; margin: 0 0 16px; }
+      p { margin: 0 0 24px; max-width: 60ch; }
+      iframe { display: block; width: 600px; height: 120px; border: 1px solid #6b6b6b; margin: 0 0 16px; }
+      button {
+        min-width: 180px;
+        min-height: 44px;
+        border: 0;
+        border-radius: 8px;
+        background: #14448c;
+        color: #ffffff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      Frames are enumerated, never entered: going inside even a same-origin one
+      needs a frame-coordination layer this build does not have. What matters is
+      that the count reaches the user, because an audit that quietly ignored
+      most of a page would read as a clean page.
+
+      Two cross-origin frames, one same-origin, and two that loaded nothing --
+      the last two are not missed coverage and must not be counted.
+    -->
+    <main>
+      <h1>A page built out of frames</h1>
+      <p>Most of what matters on this page lives inside the boxes below.</p>
+
+      <iframe title="Pricing widget" src="https://widgets.example.test/pricing"></iframe>
+      <iframe title="Support chat" src="https://chat.example.test/embed"></iframe>
+      <iframe title="Same-origin help" src="/inspect.html"></iframe>
+      <iframe title="Nothing loaded" src="about:blank"></iframe>
+      <iframe title="No source at all"></iframe>
+
+      <button type="button">Start your trial</button>
+    </main>
+  </body>
+</html>

@@ -2,6 +2,7 @@ import { assertNever, type ErrorCode } from '../shared/result';
 import type { Envelope, ThursdayMessage } from '../shared/messaging/protocol';
 import { isEnvelope } from '../shared/messaging/protocol';
 import { checkUrl } from '../shared/utils/url';
+import { ACTIVATE_COMMAND } from '../shared/constants/product';
 
 /**
  * The MV3 service worker is killed after ~30s idle, so it owns no audit state
@@ -92,6 +93,27 @@ async function activate(tabId: number, url: string | undefined): Promise<{ ok: b
     return { ok: false, code: 'INJECTION_FAILED' };
   }
 }
+
+/**
+ * The keyboard shortcut.
+ *
+ * Like clicking the action, pressing it is a user gesture that grants
+ * activeTab -- which is why activation can start here and not from a button
+ * inside the side panel (PLAN.md section 2.1). It also opens the panel, since
+ * the gesture is what makes that allowed.
+ */
+chrome.commands.onCommand.addListener((command) => {
+  if (command !== ACTIVATE_COMMAND) return;
+  void (async () => {
+    const tab = await getActiveTab();
+    if (tab?.id === undefined) return;
+    // Opened first: the gesture window closes once we start awaiting other work.
+    const panel = chrome.sidePanel.open({ tabId: tab.id }).catch(() => undefined);
+    const result = await activate(tab.id, tab.url);
+    await panel;
+    if (!result.ok) panelError(result.code ?? 'UNKNOWN');
+  })();
+});
 
 /** One-shot commands. Used by the popup, which cannot hold a port open. */
 chrome.runtime.onMessage.addListener((raw: unknown, _sender, sendResponse) => {

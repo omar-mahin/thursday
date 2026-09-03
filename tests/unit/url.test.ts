@@ -54,3 +54,17 @@ describe('displayOrigin', () => {
     expect(displayOrigin(undefined)).toBe('');
   });
 });
+
+describe('restriction messages', () => {
+  it('says the browser withheld the page rather than that we declined it', () => {
+    // The 'invalid' verdict is what a withheld URL produces, and Chrome
+    // withholds its own pages. Wording it as our choice was a small untruth.
+    expect(restrictionMessage('invalid')).toContain('will not give extensions access');
+  });
+
+  it('names the specific reason where there is one', () => {
+    expect(restrictionMessage('scheme')).toContain('browser page');
+    expect(restrictionMessage('host')).toContain('Web Store');
+    expect(restrictionMessage('file')).toContain('file URLs');
+  });
+});

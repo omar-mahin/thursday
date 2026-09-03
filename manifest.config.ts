@@ -1,4 +1,9 @@
-import { PRODUCT_NAME, PRODUCT_TAGLINE } from './src/shared/constants/product';
+import {
+  ACTIVATE_COMMAND,
+  ACTIVATE_SHORTCUT,
+  PRODUCT_NAME,
+  PRODUCT_TAGLINE,
+} from './src/shared/constants/product';
 
 /**
  * The permission set is a product constraint, not an implementation detail.
@@ -37,6 +42,20 @@ export const manifest = {
     default_title: PRODUCT_NAME,
     default_icon: ICONS,
   },
+  /**
+   * A second way in, and the only one a keyboard user can reach without a
+   * mouse. A keyboard shortcut grants activeTab exactly as clicking the action
+   * does, so this needs no extra permission -- and after a reload, which drops
+   * the content script, it makes restarting one keystroke instead of two
+   * clicks.
+   */
+  commands: {
+    [ACTIVATE_COMMAND]: {
+      suggested_key: { default: ACTIVATE_SHORTCUT },
+      description: `Activate ${PRODUCT_NAME} on this page`,
+    },
+  },
+
   side_panel: { default_path: 'sidepanel.html' },
   options_page: 'options.html',
   background: { service_worker: 'service-worker.js', type: 'module' },

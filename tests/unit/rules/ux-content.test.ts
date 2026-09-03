@@ -1,5 +1,5 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import { competingCtas, navigationSize, visualWeight } from '../../../src/audit/rules/ux/hierarchy';
+import { competingCtas, isPromoted, navigationSize, visualWeight } from '../../../src/audit/rules/ux/hierarchy';
 import { formLength, isInside, nonObviousClickable } from '../../../src/audit/rules/ux/forms';
 import {
   duplicateLinkText,
@@ -49,6 +49,51 @@ describe('UX-001 competing calls to action', () => {
       }, { backgroundColor: 'rgba(0, 0, 0, 0)', fontWeight: 400 }),
     ]);
     expect(run(competingCtas, page)).toEqual([]);
+  });
+
+  it('ignores two identical buttons that were never promoted', () => {
+    // Found by auditing Thursday's own panel. Treating every named button as a
+    // call to action makes this rule fire on any application with a toolbar or
+    // a list of clickable rows -- a control that is the same colour as the card
+    // it sits on has not been promoted, whatever else is true of it.
+    const page = snapshot([
+      element({ tagName: 'section', styles: { backgroundColor: 'rgb(247, 248, 250)' } }),
+      cta('Show on page', { landmark: 0, parent: 0 }, { backgroundColor: 'rgb(247, 248, 250)', fontWeight: 400 }),
+      cta('Add to report', { landmark: 0, parent: 0 }, { backgroundColor: 'rgb(247, 248, 250)', fontWeight: 400 }),
+    ]);
+    expect(run(competingCtas, page)).toEqual([]);
+  });
+
+  it('ignores clickable list rows, which are rows and not actions', () => {
+    const page = snapshot([
+      element({ tagName: 'ul', styles: { backgroundColor: 'rgb(255, 255, 255)' } }),
+      cta('2 x Form controls need a label', { landmark: 0, parent: 0 }, { backgroundColor: 'rgba(0, 0, 0, 0)' }),
+      cta('3 x Targets are too small', { landmark: 0, parent: 0 }, { backgroundColor: 'rgba(0, 0, 0, 0)' }),
+    ]);
+    expect(run(competingCtas, page)).toEqual([]);
+  });
+
+  it('still flags two filled actions on a plain background', () => {
+    // The case the rule exists for must survive the fix.
+    const page = snapshot([
+      element({ tagName: 'section', styles: { backgroundColor: 'rgb(255, 255, 255)' } }),
+      cta('Start free trial', { landmark: 0, parent: 0 }, { backgroundColor: 'rgb(31, 79, 216)' }),
+      cta('Book a demo', { landmark: 0, parent: 0 }, { backgroundColor: 'rgb(31, 79, 216)' }),
+    ]);
+    expect(run(competingCtas, page)).toHaveLength(1);
+  });
+
+  it('counts a shadow as promotion, since it lifts a control off the page', () => {
+    resetIndexes();
+    const parent = element({ tagName: 'section', styles: { backgroundColor: 'rgb(255, 255, 255)' } });
+    const flat = cta('Flat', { parent: parent.index }, { backgroundColor: 'rgb(255, 255, 255)' });
+    const raised = cta('Raised', { parent: parent.index }, {
+      backgroundColor: 'rgb(255, 255, 255)',
+      hasBoxShadow: true,
+    });
+    const page = snapshot([parent, flat, raised]);
+    expect(isPromoted(page, flat)).toBe(false);
+    expect(isPromoted(page, raised)).toBe(true);
   });
 
   it('does not compare actions in different sections', () => {

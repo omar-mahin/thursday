@@ -16,14 +16,14 @@ body { min-width: 320px; }
 .panel-foot {
   padding: 9px 12px;
   border-top: 1px solid var(--line);
-  font-size: 11px;
+  font-size: 12px;
   color: var(--fg-dim);
   display: flex;
   justify-content: space-between;
   gap: 8px;
 }
 .section-title {
-  font-size: 11px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-dim);
@@ -47,6 +47,7 @@ body { min-width: 320px; }
 }
 .tabs button {
   position: relative;
+  min-height: 28px;
   border: 0;
   border-bottom: 2px solid transparent;
   border-radius: 6px 6px 0 0;
@@ -87,15 +88,16 @@ body { min-width: 320px; }
   gap: 5px;
   border: 1px solid var(--line);
   border-radius: 999px;
-  padding: 2px 9px;
-  font-size: 11px;
+  padding: 3px 9px;
+  /* Interactive in the filter row, so it also carries the 24px floor below. */
+  font-size: 12px;
   font-weight: 600;
 }
-.sev-chip[data-severity='critical'], .finding-sev[data-severity='critical'] { color: #e0335b; }
-.sev-chip[data-severity='high'], .finding-sev[data-severity='high'] { color: #d9622b; }
-.sev-chip[data-severity='medium'], .finding-sev[data-severity='medium'] { color: #b08000; }
-.sev-chip[data-severity='low'], .finding-sev[data-severity='low'] { color: #4a7fbe; }
-.sev-chip[data-severity='info'], .finding-sev[data-severity='info'] { color: var(--fg-dim); }
+.sev-chip[data-severity='critical'], .finding-sev[data-severity='critical'] { color: var(--sev-critical); }
+.sev-chip[data-severity='high'], .finding-sev[data-severity='high'] { color: var(--sev-high); }
+.sev-chip[data-severity='medium'], .finding-sev[data-severity='medium'] { color: var(--sev-medium); }
+.sev-chip[data-severity='low'], .finding-sev[data-severity='low'] { color: var(--sev-low); }
+.sev-chip[data-severity='info'], .finding-sev[data-severity='info'] { color: var(--sev-info); }
 
 .findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .finding { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-raised); overflow: hidden; }
@@ -111,13 +113,13 @@ body { min-width: 320px; }
   text-align: left;
 }
 .finding-head:hover { background: var(--bg-hover); }
-.finding-sev { font-size: 10px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; flex: none; }
+.finding-sev { font-size: 12px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase; flex: none; }
 .finding-title { font-weight: 500; }
 .finding-body { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 10px; }
 .finding-summary { margin: 0; color: var(--fg); }
 .finding-meta { display: flex; flex-wrap: wrap; gap: 5px; }
 .finding-block h3 {
-  font-size: 10px;
+  font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-dim);
@@ -142,13 +144,22 @@ body { min-width: 320px; }
   padding: 0 5px;
   border-radius: 999px;
   background: var(--bg-hover);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 600;
   color: var(--fg-dim);
 }
 
 .filters { display: flex; flex-wrap: wrap; gap: 6px; margin: 0 0 8px; }
-.filters .sev-chip { cursor: pointer; background: var(--bg-raised); }
+/*
+ * These are buttons, and WCAG 2.5.8 (AA) asks for 24 x 24 CSS px. The first
+ * version measured 22px tall -- Thursday's audit of its own panel found it,
+ * having been built to find exactly this on other people's pages.
+ */
+.filters .sev-chip {
+  cursor: pointer;
+  background: var(--bg-raised);
+  min-height: 24px;
+}
 .filters .sev-chip[data-off='true'] { opacity: 0.4; }
 .filters .sev-chip[aria-pressed='true'] { border-color: currentColor; }
 
@@ -190,25 +201,25 @@ body { min-width: 320px; }
   display: grid;
   place-items: center;
   flex: none;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: #fff;
   background: var(--fg-dim);
 }
-.row-pin[data-severity='critical'] { background: #d61f4e; }
-.row-pin[data-severity='high']     { background: #d9622b; }
-.row-pin[data-severity='medium']   { background: #b58100; }
-.row-pin[data-severity='low']      { background: #3f6fb5; }
-.row-pin[data-severity='info']     { background: #6b7280; }
+.row-pin[data-severity='critical'] { background: var(--pin-critical); }
+.row-pin[data-severity='high']     { background: var(--pin-high); }
+.row-pin[data-severity='medium']   { background: var(--pin-medium); }
+.row-pin[data-severity='low']      { background: var(--pin-low); }
+.row-pin[data-severity='info']     { background: var(--pin-info); }
 
-.row-flag { color: var(--accent); font-size: 11px; flex: none; }
+.row-flag { color: var(--accent); font-size: 12px; flex: none; }
 .row-status {
   flex: none;
-  font-size: 10px;
+  font-size: 12px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   color: var(--fg-dim);
@@ -228,12 +239,12 @@ body { min-width: 320px; }
 .detail-pin {
   display: grid;
   place-items: center;
-  width: 18px;
-  height: 18px;
+  width: 20px;
+  height: 20px;
   border-radius: 50%;
   background: var(--accent);
   color: var(--accent-fg);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 700;
   flex: none;
 }
@@ -250,7 +261,19 @@ body { min-width: 320px; }
   padding: 6px 8px;
   resize: vertical;
 }
-button.icon { border: 0; background: none; padding: 2px 4px; color: var(--fg-dim); }
+/*
+ * WCAG 2.5.8 (AA) asks for 24 x 24 CSS px. These measured 18 x 23 and 24 x 23
+ * -- found by Thursday auditing its own panel with its own rules. The glyph is
+ * the same size; the hit area is not.
+ */
+button.icon {
+  border: 0;
+  background: none;
+  padding: 2px 4px;
+  min-width: 24px;
+  min-height: 24px;
+  color: var(--fg-dim);
+}
 button.icon:hover { color: var(--fg); background: none; }
 
 /* -- history ------------------------------------------------------------- */
@@ -278,7 +301,7 @@ button.icon:hover { color: var(--fg); background: none; }
 }
 .history-open:hover:not(:disabled) { background: var(--bg-hover); border-radius: 6px; }
 .history-when { font-size: 12px; font-weight: 600; }
-.history-count { font-size: 11px; color: var(--fg-dim); }
+.history-count { font-size: 12px; color: var(--fg-dim); }
 
 /* -- files --------------------------------------------------------------- */
 .dropzone {
@@ -303,7 +326,7 @@ button.icon:hover { color: var(--fg); background: none; }
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 2px 9px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   color: var(--fg-dim);
 }

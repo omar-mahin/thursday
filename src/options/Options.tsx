@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { REQUIRED_PERMISSIONS } from '../../manifest.config';
-import { PRODUCT_NAME } from '../shared/constants/product';
+import { ACTIVATE_SHORTCUT, PRODUCT_NAME } from '../shared/constants/product';
 import { DEFAULT_SETTINGS, getSetting, setSetting, type Settings } from '../storage/settings';
 import { clearAll, deleteByOrigin, usage, type StorageUsage } from '../storage/audits';
 
@@ -21,6 +21,7 @@ export function Options(): React.ReactElement {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [cleared, setCleared] = useState(false);
   const [stored, setStored] = useState<StorageUsage | null>(null);
+  const [copied, setCopied] = useState(false);
   const [storageError, setStorageError] = useState<string | null>(null);
 
   const loadUsage = useCallback(() => {
@@ -56,7 +57,7 @@ export function Options(): React.ReactElement {
     <div className="wrap">
       <header className="opt-head">
         <h1>{PRODUCT_NAME} settings</h1>
-        <p className="hint" style={{ margin: '4px 0 0' }}>
+        <p className="hint" style={{ margin: '8px 0 0' }}>
           Everything here is stored on this machine only.
         </p>
       </header>
@@ -102,6 +103,28 @@ export function Options(): React.ReactElement {
         </div>
         <div className="field">
           <div>
+            <div className="field-label">Keyboard shortcut</div>
+            <div className="hint">
+              <span className="mono">{ACTIVATE_SHORTCUT}</span> activates {PRODUCT_NAME} on the current page and
+              opens the panel. Change it in Chrome under Extensions → Keyboard shortcuts.
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => {
+              // chrome://extensions/shortcuts cannot be opened by an extension,
+              // so this is the closest honest thing: show where it lives.
+              void navigator.clipboard
+                ?.writeText('chrome://extensions/shortcuts')
+                .then(() => setCopied(true))
+                .catch(() => setCopied(false));
+            }}
+          >
+            {copied ? 'Address copied' : 'Copy address'}
+          </button>
+        </div>
+        <div className="field">
+          <div>
             <div className="field-label">Toolbar position</div>
             <div className="hint">
               {settings.toolbarPosition
@@ -117,7 +140,7 @@ export function Options(): React.ReactElement {
 
       <section className="card privacy">
         <div className="section-title">Privacy</div>
-        <p style={{ margin: '0 0 4px' }}>
+        <p style={{ margin: '0 0 8px' }}>
           {PRODUCT_NAME} has no account, no server and no network access. It cannot send your page
           anywhere, and the build is tested for it.
         </p>
@@ -234,7 +257,7 @@ export function Options(): React.ReactElement {
           </button>
         </div>
         {cleared ? (
-          <p className="hint" role="status" style={{ margin: '6px 0 0' }}>
+          <p className="hint" role="status" style={{ margin: '8px 0 0' }}>
             Cleared.
           </p>
         ) : null}

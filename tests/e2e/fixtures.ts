@@ -137,3 +137,5 @@ export async function exchange<T>(
 }
 
 export { expect } from '@playwright/test';
+/** Re-exported so a test that launches its own browser does not import twice. */
+export { chromium } from '@playwright/test';

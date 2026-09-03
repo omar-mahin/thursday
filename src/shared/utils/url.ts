@@ -50,7 +50,10 @@ export function restrictionMessage(reason: Exclude<UrlVerdict, { auditable: true
     case 'scheme':
       return 'This is a browser page, so it cannot be audited.';
     case 'invalid':
-      return 'This page cannot be audited by the extension.';
+      // Reached when Chrome withholds the tab's URL, which it does for its own
+      // pages and the Web Store. Saying "cannot be audited" implied a choice on
+      // our part; the truth is that the browser will not let us look.
+      return 'The browser will not give extensions access to this page.';
   }
 }
 

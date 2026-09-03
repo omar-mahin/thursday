@@ -327,3 +327,78 @@ describe('runAudit', () => {
     expect(findings).toEqual([]);
   });
 });
+
+/**
+ * Dedupe's cost, which is not obviously part of a rule's cost.
+ *
+ * A page can put a thousand controls under the touch-target minimum, and the
+ * first version of the ancestor-collapse pass compared every finding with every
+ * other one, rebuilding an ancestor chain each time. It took longer than the
+ * other twenty-nine rules put together, and almost all of that work was on
+ * findings the per-rule cap discarded immediately afterwards.
+ */
+describe('dedupe at scale', () => {
+  /** A flat page of `count` siblings, plus the findings a rule fires on each. */
+  const noisyPage = (count: number) => {
+    resetIndexes();
+    const root = element({ tagName: 'main' });
+    const children = Array.from({ length: count }, () =>
+      element({ tagName: 'button', parent: root.index, interactive: true }),
+    );
+    const page = snapshot([root, ...children]);
+    const findings = children.map((child) =>
+      raw({ ruleId: 'A11Y-004', elementIndex: child.index, title: `Target ${child.index} is too small` }),
+    );
+    return { page, findings };
+  };
+
+  it('collapses an ancestor firing of the same rule, keeping the inner one', () => {
+    resetIndexes();
+    const outer = element({ tagName: 'section' });
+    const inner = element({ tagName: 'button', parent: outer.index });
+    const page = snapshot([outer, inner]);
+    const outerFinding = raw({ ruleId: 'A11Y-003', elementIndex: outer.index, title: 'Contrast is low' });
+    const innerFinding = raw({ ruleId: 'A11Y-003', elementIndex: inner.index, title: 'Contrast is low' });
+
+    const kept = dedupe([outerFinding, innerFinding], page);
+    expect(kept).toEqual([innerFinding]);
+  });
+
+  it('collapses through several generations, not just a direct parent', () => {
+    resetIndexes();
+    const a = element({ tagName: 'main' });
+    const b = element({ tagName: 'section', parent: a.index });
+    const c = element({ tagName: 'div', parent: b.index });
+    const d = element({ tagName: 'button', parent: c.index });
+    const page = snapshot([a, b, c, d]);
+    const findings = [a, d].map((item) =>
+      raw({ ruleId: 'UI-001', elementIndex: item.index, title: 'Buttons are inconsistent' }),
+    );
+
+    expect(dedupe(findings, page).map((finding) => finding.elementIndex)).toEqual([d.index]);
+  });
+
+  it('leaves siblings alone: neither is inside the other', () => {
+    const { page, findings } = noisyPage(4);
+    expect(dedupe(findings, page)).toHaveLength(4);
+  });
+
+  it('stays linear as the number of findings grows', () => {
+    // Ten times the findings should cost roughly ten times as much, not a
+    // hundred. The multiple is loose because this runs on shared CI hardware;
+    // it is checking the shape of the curve, not a wall-clock number.
+    const time = (count: number): number => {
+      const { page, findings } = noisyPage(count);
+      dedupe(findings, page);
+      const started = performance.now();
+      dedupe(findings, page);
+      return performance.now() - started;
+    };
+
+    const small = Math.max(time(200), 0.05);
+    const large = time(2000);
+    expect(large / small, `200 findings took ${small.toFixed(2)}ms, 2000 took ${large.toFixed(2)}ms`).toBeLessThan(
+      30,
+    );
+  });
+});

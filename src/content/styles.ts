@@ -218,11 +218,19 @@ export const PIN_CSS = `
   will-change: transform;
 }
 
-.pin[data-severity="critical"] { background: #d61f4e; }
-.pin[data-severity="high"]     { background: #d9622b; }
-.pin[data-severity="medium"]   { background: #b58100; }
-.pin[data-severity="low"]      { background: #3f6fb5; }
-.pin[data-severity="info"]     { background: #6b7280; }
+/*
+ * Pin fills, with the ordinal in white on top. Chosen for contrast against
+ * white rather than against the page, and darkened from the first version --
+ * white on the old amber measured 3.4:1, which is a number this product exists
+ * to flag on other people's pages. Literal rather than tokenised because the
+ * content stylesheet is injected into pages whose custom properties are not
+ * ours to read.
+ */
+.pin[data-severity="critical"] { background: #b31038; }
+.pin[data-severity="high"]     { background: #a04a10; }
+.pin[data-severity="medium"]   { background: #7d5a00; }
+.pin[data-severity="low"]      { background: #2f5fb5; }
+.pin[data-severity="info"]     { background: #5c6270; }
 
 /* The "display: grid" above beats the user-agent [hidden] rule, so without
    this a pin whose element scrolled away keeps rendering at its last spot. */

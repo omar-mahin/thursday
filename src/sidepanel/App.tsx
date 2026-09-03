@@ -548,10 +548,28 @@ function AuditFooter({ active, inReport }: { active: ActiveAudit; inReport: numb
       {inReport > 0 ? ` ${inReport} in report.` : ''}
       {active.suppressed > 0 ? ` ${active.suppressed} lower-ranked findings not shown.` : ''}
       {active.audit.truncated ? ' The page exceeded the element budget, so some elements were not scanned.' : ''}
+      {framesNote(active.audit)}
       {active.failedRules.length > 0 ? ` Rules that could not run: ${active.failedRules.join(', ')}.` : ''}
       {active.source === 'live' && !active.persisted ? ' Not saved to history.' : ''}
     </p>
   );
+}
+
+/**
+ * What the audit could not see.
+ *
+ * Frames are enumerated and never entered, so a page built out of iframes gets
+ * a thin audit. Saying nothing would let that read as a clean page.
+ */
+export function framesNote(audit: Audit): string {
+  const { crossOrigin, sameOrigin } = audit.framesNotInspected;
+  const total = crossOrigin + sameOrigin;
+  if (total === 0) return '';
+  const frames = `${total} embedded frame${total === 1 ? '' : 's'}`;
+  const detail = crossOrigin > 0 && sameOrigin > 0 ? ` (${crossOrigin} from another origin)` : '';
+  return ` ${frames}${detail} ${total === 1 ? 'was' : 'were'} not looked inside, so anything in ${
+    total === 1 ? 'it' : 'them'
+  } is not covered.`;
 }
 
 function SelectAction({

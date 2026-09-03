@@ -11,6 +11,32 @@
   --danger: #f7768e;
   --ok: #9ece6a;
   --radius: 8px;
+
+  /*
+   * Severity colours, as tokens rather than hex scattered through the panel.
+   *
+   * Every one of these clears 4.5:1 against --bg-raised in its own theme,
+   * because these are the smallest and most meaningful pieces of text in the
+   * product: a severity label at 10px is the thing a user reads first, and the
+   * first version of it measured 3.3:1. Thursday's own audit of its own panel
+   * is what found that (see tests/e2e/self-audit.spec.ts), which is the whole
+   * argument for having such a test.
+   *
+   * --pin-* are fills with white text on top, so they are chosen for contrast
+   * against white rather than against the page.
+   */
+  --sev-critical: #ff6b8a;
+  --sev-high: #f0894a;
+  --sev-medium: #dcae3c;
+  --sev-low: #7aa2f7;
+  --sev-info: #a2a7b3;
+
+  --pin-critical: #b31038;
+  --pin-high: #a04a10;
+  --pin-medium: #7d5a00;
+  --pin-low: #2f5fb5;
+  --pin-info: #5c6270;
+
   color-scheme: dark light;
 }
 
@@ -26,6 +52,12 @@
     --accent-fg: #ffffff;
     --danger: #c53052;
     --ok: #2f7d32;
+
+    --sev-critical: #c1123c;
+    --sev-high: #b04a12;
+    --sev-medium: #8a6300;
+    --sev-low: #2f5fd0;
+    --sev-info: #5c6270;
   }
 }
 
@@ -90,7 +122,7 @@ input, select {
 .row { display: flex; align-items: center; gap: 8px; }
 .spread { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
 .dim { color: var(--fg-dim); }
-.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
+.mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 12px; }
 .truncate { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 
 .badge {
@@ -99,7 +131,7 @@ input, select {
   gap: 5px;
   border-radius: 999px;
   padding: 2px 8px;
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 600;
   border: 1px solid var(--line);
   color: var(--fg-dim);
@@ -119,7 +151,7 @@ input, select {
 }
 
 .brandmark {
-  font-size: 11px;
+  font-size: 12px;
   font-weight: 700;
   letter-spacing: 0.08em;
   text-transform: uppercase;

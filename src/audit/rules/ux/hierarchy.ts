@@ -1,6 +1,8 @@
-import type { ElementSnapshot } from '../../../shared/types';
+import type { ElementSnapshot, PageSnapshot } from '../../../shared/types';
 import type { Rule } from '../../types';
 import { finding, label } from '../../types';
+import { resolveBackground } from '../../measure/background';
+import { isOpaque, parseColor } from '../../measure/color';
 
 /** Rough visual weight: area, boosted by strong colour and heavy type. */
 export function visualWeight(element: ElementSnapshot): number {
@@ -11,10 +13,49 @@ export function visualWeight(element: ElementSnapshot): number {
   return area * weightFactor * filled * sizeFactor;
 }
 
-const isCallToAction = (element: ElementSnapshot): boolean =>
+const isButton = (element: ElementSnapshot): boolean =>
   (element.tagName === 'button' || element.role === 'button' || element.form?.type === 'submit') &&
   !element.disabled &&
   element.accessibleName.name.length > 0;
+
+/**
+ * Whether a control has been styled to attract, rather than merely being a
+ * control.
+ *
+ * The distinction matters because it is the whole rule. Treating every named
+ * button as a call to action makes UX-001 fire on any application with two
+ * similar toolbar buttons or a list of clickable rows -- which Thursday's own
+ * panel is, and which is how this was found. A call to action has been given a
+ * treatment that separates it from its surroundings: a fill that differs from
+ * the background behind it, or a shadow lifting it off the page. A button that
+ * is the same colour as the card it sits on has not been promoted, whatever
+ * else is true of it.
+ */
+export function isPromoted(snapshot: PageSnapshot, element: ElementSnapshot): boolean {
+  if (element.styles.hasBoxShadow) return true;
+  const own = parseColor(element.styles.backgroundColor);
+  if (!own || own.a === 0) return false;
+
+  const parent = element.parent === null ? undefined : snapshot.elements[element.parent];
+  if (!parent) return isOpaque(own);
+  const behind = resolveBackground(snapshot, parent);
+  // An unknowable background cannot be shown to match, so a filled control on
+  // one is taken at face value rather than dismissed.
+  if (behind.kind === 'indeterminate') return true;
+  return (
+    Math.abs(own.r - behind.color.r) +
+      Math.abs(own.g - behind.color.g) +
+      Math.abs(own.b - behind.color.b) >
+    FILL_DIFFERENCE
+  );
+}
+
+/**
+ * How different a fill has to be from its surroundings to read as promoted.
+ * Summed across channels, so a nudge of two or three levels -- the kind used
+ * for a subtle hover or a raised panel -- does not count as a call to action.
+ */
+const FILL_DIFFERENCE = 24;
 
 /**
  * UX-001 - two calls to action of near-identical prominence in one section.
@@ -30,10 +71,10 @@ export const competingCtas: Rule = {
   kind: 'heuristic',
   scope: 'page',
   description: 'One action per section should be visually dominant',
-  run({ candidates }) {
+  run({ candidates, snapshot }) {
     const bySection = new Map<number | null, ElementSnapshot[]>();
     for (const element of candidates) {
-      if (!isCallToAction(element)) continue;
+      if (!isButton(element) || !isPromoted(snapshot, element)) continue;
       const key = element.landmark;
       const bucket = bySection.get(key);
       if (bucket) bucket.push(element);

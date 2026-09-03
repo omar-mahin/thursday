@@ -17,6 +17,7 @@ const audit: Audit = {
   findingIds: ['f1'],
   truncated: false,
   elementsScanned: 240,
+  framesNotInspected: { crossOrigin: 0, sameOrigin: 0 },
 };
 
 const digest: PageSnapshotDigest = {

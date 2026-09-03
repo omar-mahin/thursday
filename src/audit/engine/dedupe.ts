@@ -1,4 +1,4 @@
-import type { ElementSnapshot, PageSnapshot, RawFinding } from '../../shared/types';
+import type { PageSnapshot, RawFinding } from '../../shared/types';
 import { normalizeLabel } from '../measure/text';
 
 /**
@@ -23,25 +23,17 @@ export const MAX_PER_AUDIT = 60;
  * One noisy rule must not bury the rest of the page. An unstyled form can put
  * a dozen inputs under the touch-target minimum, and a list of twelve
  * near-identical findings hides the unlabelled control underneath them.
- * Sprint 4's UI groups repeats by rule; until then this keeps the list readable,
- * and the suppressed count is reported rather than hidden.
+ * The UI also groups repeats by rule, and the suppressed count is reported
+ * rather than hidden.
  */
 export const MAX_PER_RULE = 5;
+
 
 /** Similarity floor for treating two titles as the same statement. */
 export const TITLE_SIMILARITY = 0.6;
 
-function ancestorChain(elements: readonly ElementSnapshot[], index: number): Set<number> {
-  const chain = new Set<number>();
-  let parent = elements[index]?.parent ?? null;
-  let hops = 0;
-  while (parent !== null && hops < 40) {
-    chain.add(parent);
-    parent = elements[parent]?.parent ?? null;
-    hops += 1;
-  }
-  return chain;
-}
+/** Deep enough for real markup; a bound, so a cyclic parent index cannot hang. */
+const MAX_ANCESTOR_HOPS = 40;
 
 /** Token-set Jaccard: enough to spot two phrasings of one statement. */
 export function titleSimilarity(a: string, b: string): number {
@@ -62,15 +54,37 @@ export function dedupe(findings: readonly RawFinding[], snapshot: PageSnapshot):
     else byRule.set(finding.ruleId, [finding]);
   }
 
+  /**
+   * A rule that fired on an element and on its ancestor keeps the inner one.
+   *
+   * Walking every pair looks natural and is quadratic: an unstyled page can
+   * put a thousand controls under the touch-target minimum, and comparing each
+   * against each -- rebuilding an ancestor chain every time -- was a million
+   * chain walks and most of the audit's running time. Walking each element's
+   * chain once and asking whether any ancestor also fired is the same answer
+   * in linear time, because the chain depends only on the element.
+   */
   const dropped = new Set<RawFinding>();
   for (const group of byRule.values()) {
     if (group.length < 2) continue;
-    const indexed = group.filter((finding) => finding.elementIndex !== undefined);
-    for (const outer of indexed) {
-      for (const inner of indexed) {
-        if (outer === inner) continue;
-        const chain = ancestorChain(snapshot.elements, inner.elementIndex!);
-        if (chain.has(outer.elementIndex!)) dropped.add(outer);
+
+    const byIndex = new Map<number, RawFinding[]>();
+    for (const finding of group) {
+      if (finding.elementIndex === undefined) continue;
+      const bucket = byIndex.get(finding.elementIndex);
+      if (bucket) bucket.push(finding);
+      else byIndex.set(finding.elementIndex, [finding]);
+    }
+    if (byIndex.size < 2) continue;
+
+    for (const index of byIndex.keys()) {
+      let parent = snapshot.elements[index]?.parent ?? null;
+      let hops = 0;
+      while (parent !== null && hops < MAX_ANCESTOR_HOPS) {
+        const outer = byIndex.get(parent);
+        if (outer) for (const finding of outer) dropped.add(finding);
+        parent = snapshot.elements[parent]?.parent ?? null;
+        hops += 1;
       }
     }
   }

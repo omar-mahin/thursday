@@ -47,7 +47,9 @@ export type PageSnapshot = {
   elements: ElementSnapshot[];
   /** True when the element cap was hit. Surfaced in the report, not hidden. */
   truncated: boolean;
+  /** Frames enumerated but not entered. Both counts are reported to the user. */
   crossOriginFrames: number;
+  sameOriginFrames: number;
   lang: string | null;
   styleSheets: StyleSheetFacts;
 };
@@ -133,6 +135,16 @@ export type Audit = {
   /** Honest reporting when the element cap was hit (PLAN.md section 5). */
   truncated: boolean;
   elementsScanned: number;
+  /**
+   * What the audit could not look at.
+   *
+   * PLAN.md section 5 originally called for one `info` finding per frame. That
+   * was wrong: a finding is a claim about the page, and "we could not look in
+   * here" is a claim about the audit. Mixing them puts items in the findings
+   * list that nobody can act on, and makes them compete for slots with real
+   * defects under the per-audit cap. So coverage is reported as coverage.
+   */
+  framesNotInspected: { crossOrigin: number; sameOrigin: number };
 };
 
 /**

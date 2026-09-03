@@ -396,7 +396,12 @@ to a colleague. So redaction still runs — it protects the export.
                             && no host_permissions && no externally_connectable
 3. lint rule: no .value read on any *Snapshot type
 4. Playwright test: intercept all network from the extension origin during a full audit → assert 0 requests
+5. built-bundle scan: the same identifiers, in the shipped bytes, dependencies included
 ```
+
+Guard 5 was added in Sprint 6 and is the one that closes the gap the others left: guards 1-3 are
+about our source, and a dependency could have brought a network call with it. None of those
+identifiers appears anywhere in the current build.
 
 Guard 4 is the one that matters. It's the claim on the store listing, so it needs a test. As of
 Sprint 5 it also covers storing an audit, writing both file formats, reading a file back, comparing
@@ -659,15 +664,99 @@ specifically (a narrow host permission is refused outright), so `dist-test/` now
 to make the capture pipeline testable at all. The shipped manifest is unchanged, and a test asserts
 it never contains that string.
 
-### Sprint 6 — Hardening & ship (3–4 days) ← next
-Fixture pages (spec §40) plus a clean control page; Playwright E2E for both Definition-of-Done
-flows; performance pass against the snapshot budgets; Thursday audits its own UI; store listing
-that leads with local-only/no-account; packaging and privacy disclosures (the "does not collect
-any data" declaration is straightforward here, and true).
+### Sprint 6 — Hardening & ship ✅ complete
 
-**Total: ~20–26 focused days**, and it ships as a complete product — not an MVP waiting for a
-backend. Phase 2 then adds interpretation on top of a working evidence engine, which is the right
-order regardless of budget.
+**Delivered.** Both Definition-of-Done flows as end-to-end tests; a performance
+pass with budgets rather than benchmarks; **Thursday audited by Thursday** — the
+whole thirty-rule engine over the real markup and real stylesheet of the panel,
+the popup, the settings page and the exported report; frame coverage reported
+instead of silently skipped; a keyboard activation shortcut; a hand-written
+packaging step with a byte-for-byte test and a load-the-zip-in-Chrome test; a
+fifth guard over the shipped bundle; and the store listing with its permission
+justifications and data disclosures.
+
+**Verified:** 402 unit tests and 102 Playwright tests.
+
+**Two defects in the rules, found by pointing Thursday at itself:**
+1. **UX-001 treated every named button as a call to action.** It fired on
+   Thursday's own findings list, comparing two clickable list rows as competing
+   CTAs, and would have fired on any application with a toolbar or a list of
+   rows. A call to action has been *promoted*: a fill that differs from the
+   background behind it, or a shadow lifting it off the page. A button the same
+   colour as the card it sits on has not been, whatever else is true of it.
+2. **A11Y-004 measured a checkbox instead of the label that activates it.**
+   Clicking anywhere in a wrapping `<label>` toggles the control, so the label
+   is the target WCAG 2.5.8 measures — saying otherwise fires on very nearly
+   every checkbox on the web. The check is structural (is there a label around
+   it) and deliberately not "did the name come from a wrapping label": a control
+   with an `aria-label` takes its name from the attribute while still being
+   activated by the label, and the first version of the fix missed exactly that
+   case, on Thursday's own settings page.
+   A11Y-004 also stopped reporting elements of a few pixels: the visually-hidden
+   pattern is everywhere (skip links, the file input behind a styled button),
+   and "give this 1px input 24px" is advice nobody can act on.
+
+**Eighteen defects in Thursday's own UI, all fixed.** The panel's severity
+labels — its most meaningful text — measured **3.33:1** at 11px; five targets
+sat under the WCAG 24px floor; metadata was 11px at panel width. The popup's
+Settings link was 43 × 16px. Settings had two 16px toggles and a 4px gap on an
+otherwise-8px page. Severity colours are now tokens with separate light and dark
+values, each clearing 4.5:1 against the surface it sits on, and the pin fills
+were darkened because white on the old amber measured 3.4:1 — a number this
+product exists to flag on other people's pages.
+
+**One performance defect, an 18× win.** The audit of a heavy page took 156ms,
+and almost all of it was dedupe: the ancestor-collapse pass compared every
+finding with every other one, rebuilding an ancestor chain each time. A page
+with a thousand controls under the touch-target minimum meant a million chain
+walks, nearly all of them on findings the per-rule cap discarded immediately
+afterwards. Walking each element's chain once is the same answer in linear time.
+**156ms → 8.5ms.** The test that should have caught it was measuring each rule
+*through the whole engine*, so it charged the rules for dedupe and reported the
+slowest rule at 181ms — that misattribution is why the engine pipeline now has
+its own budget, separate from the rules it runs.
+
+**Measured, on a 3000-node page capped at 1500 elements:** snapshot 40ms
+(budget 400), full 30-rule audit 8.5ms, slowest single rule 0.7ms, click to
+first finding 221ms end to end.
+
+**A correction to section 5.** It called for one `info` finding per frame that
+could not be entered. That was wrong: a finding is a claim about the page, and
+"we could not look in here" is a claim about the audit. Mixing them puts items
+in the findings list nobody can act on, and makes them compete for slots with
+real defects under the per-audit cap. Frames are now counted — both cross-origin
+and same-origin, since neither is entered — and reported as coverage in the
+panel and the report. Frames that loaded nothing are not counted, because there
+is no coverage to have missed.
+
+**Two additions worth their size:**
+- **A keyboard shortcut** (`Alt+Shift+T`). A keyboard shortcut grants
+  `activeTab` exactly as clicking the action does, so it needs no permission —
+  and it is the only activation path a keyboard user can reach without a
+  pointer. After a reload, which drops the content script, restarting is one
+  keystroke instead of two clicks.
+- **A fifth guard.** `scripts/check-bundle.mjs` fails if any network identifier
+  appears in the *shipped bytes* — dependencies included, after bundling and
+  minification — if an unexpected file is in `dist/`, or if a size budget is
+  exceeded. Guard 1 proves our source names no network API; this proves the
+  artifact does not either. None of those identifiers appears in the current
+  build, React included.
+
+**Process fix.** Running Playwright directly rather than through the npm script
+skipped the `dist-test/` copy, so the suite could quietly test the previous
+build. That cost real time twice, once chasing a CSS fix that was already
+correct. It is now a Playwright `globalSetup`, so a stale artifact is not
+something anyone has to remember.
+
+**Not automated, and stated as such:** the popup's *successful* activation
+depends on the `activeTab` grant that comes from clicking the browser action,
+and Playwright cannot click browser chrome — so that path, and
+`showSaveFilePicker`'s native dialog, are verified by hand. The manual pass on
+five real sites is still outstanding, as is a licence for the public repository.
+
+**All six sprints complete.** It ships as a complete product — not an MVP waiting for a backend.
+Phase 2 then adds interpretation on top of a working evidence engine, which is the right order
+regardless of budget.
 
 ---
 

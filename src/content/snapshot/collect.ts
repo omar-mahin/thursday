@@ -71,18 +71,30 @@ function applyCap<T extends { element: Element }>(items: T[]): { items: T[]; tru
   return { items: items.filter((item) => allowed.has(item)), truncated: true };
 }
 
-function countCrossOriginFrames(): number {
-  let count = 0;
-  for (const frame of document.querySelectorAll('iframe')) {
+/**
+ * Frames are enumerated, never entered.
+ *
+ * Both kinds are counted because both are equally uninspected: entering even a
+ * same-origin frame needs a frame-coordination layer this build does not have.
+ * What matters is that the number reaches the user -- an audit that quietly
+ * ignored half a page would be worse than one that says so.
+ */
+function countFrames(): { crossOrigin: number; sameOrigin: number } {
+  let crossOrigin = 0;
+  let sameOrigin = 0;
+  for (const frame of document.querySelectorAll('iframe, frame')) {
     const src = frame.getAttribute('src');
-    if (!src) continue;
+    // No src, or about:blank: nothing was loaded, so there is nothing missed.
+    if (!src || src.trim().startsWith('about:')) continue;
     try {
-      if (new URL(src, location.href).origin !== location.origin) count += 1;
+      if (new URL(src, location.href).origin === location.origin) sameOrigin += 1;
+      else crossOrigin += 1;
     } catch {
-      count += 1;
+      // An unparseable src cannot be shown to be same-origin.
+      crossOrigin += 1;
     }
   }
-  return count;
+  return { crossOrigin, sameOrigin };
 }
 
 /**
@@ -233,6 +245,7 @@ export function collectSnapshot(options: CollectOptions): Collected {
     return snapshot;
   });
 
+  const frames = countFrames();
   const snapshot: PageSnapshot = {
     id: newId(),
     capturedAt: started,
@@ -251,7 +264,8 @@ export function collectSnapshot(options: CollectOptions): Collected {
     },
     elements: snapshots,
     truncated: ceilingHit || capHit,
-    crossOriginFrames: countCrossOriginFrames(),
+    crossOriginFrames: frames.crossOrigin,
+    sameOriginFrames: frames.sameOrigin,
     lang: document.documentElement.getAttribute('lang'),
     styleSheets: collectStyleSheetFacts(),
   };
