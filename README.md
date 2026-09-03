@@ -8,6 +8,10 @@ tested for it, not just documented.
 
 See [PLAN.md](PLAN.md) for the full engineering plan.
 
+**Source-available, not open source.** The code is published so the claims above can be checked
+rather than taken on trust. All rights are reserved: reading it is welcome, using it needs written
+permission. See [LICENSE](LICENSE).
+
 ---
 
 ## Status
@@ -152,3 +156,12 @@ src/storage/           settings, IndexedDB and its migrations, the audit file fo
 scripts/               icon generator, privacy guard, bundle check, packaging
 tests/                 unit (Vitest) · fixtures · e2e (Playwright)
 ```
+
+## Licence
+
+All rights reserved — see [LICENSE](LICENSE).
+
+The source is public so that "no account, no server, no network" is something you can verify
+instead of something you have to believe. That is not the same as a grant to use it. To use, copy,
+modify, redistribute or build on Thursday, ask first: **omarmahin0@gmail.com**, saying what you
+would like to do.

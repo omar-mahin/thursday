@@ -1,0 +1,59 @@
+Thursday
+Copyright (c) 2026 Omar Mahin. All rights reserved.
+
+PROPRIETARY LICENCE — PERMISSION REQUIRED
+
+This software and its source code, documentation, designs and any other material
+in this repository (together, "the Software") are the property of the copyright
+holder. All rights are reserved.
+
+The source is published so that it can be read and inspected. Publication does
+not grant a licence. No right to use the Software is given by the fact that you
+can see it, that you found it in a public repository, that a package manager
+fetched it, or that a copy of it reached you by any other means.
+
+WHAT YOU MAY DO WITHOUT ASKING
+
+  1. Read the source and the documentation.
+  2. Quote short excerpts for the purpose of comment, review, criticism,
+     teaching or news reporting, with attribution — to the extent your local
+     law already allows this and no further.
+
+WHAT REQUIRES WRITTEN PERMISSION FIRST
+
+Everything else. In particular, and without limiting the above, you may not do
+any of the following without prior written permission from the copyright holder:
+
+  - use the Software, in whole or in part, for any purpose, personal or
+    commercial, including installing or running it;
+  - copy, reproduce, publish, mirror, host or redistribute it;
+  - modify it, translate it, or create derivative or adapted works from it;
+  - incorporate any part of it into another work, product or service;
+  - sublicense, sell, rent, lease or otherwise transfer any interest in it;
+  - use it to train, fine-tune, evaluate or otherwise develop a machine
+    learning model or dataset;
+  - remove, obscure or alter this notice or any copyright notice in it.
+
+HOW TO ASK
+
+Write to omarmahin0@gmail.com describing what you would like to do. Permission
+is given only in writing, applies only to what it says it applies to, and may
+be withheld, limited, conditioned or withdrawn.
+
+Silence is not permission. An unanswered request is a refusal.
+
+THIRD-PARTY COMPONENTS
+
+The Software depends on third-party packages that are not covered by this
+licence and remain under the licences their own authors granted. Those licences
+govern those components; this licence governs the Software. Nothing here
+enlarges or restricts your rights in third-party code.
+
+NO WARRANTY
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+COPYRIGHT HOLDER BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER
+IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.

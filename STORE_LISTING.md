@@ -67,7 +67,17 @@ Thursday
 > too large to examine in one pass, it says how much it examined. If it had to
 > search for an element rather than measure it, the pin says so.
 >
-> Thursday is open source: https://github.com/omar-mahin/thursday
+> Thursday's source is published so anyone can check these claims for
+> themselves: https://github.com/omar-mahin/thursday — it is readable rather
+> than open source, and using it needs permission.
+
+## Licence
+
+All rights reserved. The source is published for inspection, not for reuse: see
+`LICENSE`. Any use needs written permission, requested at omarmahin0@gmail.com.
+
+This is worth stating on the listing because the repository is public, and a
+public repository with no licence is routinely read as an invitation to reuse.
 
 ## Category
 
@@ -187,6 +197,9 @@ Not in the repository; produced at submission time.
 - [ ] `npm test` green
 - [ ] `npm run package` and upload `release/thursday-<version>.zip`
 - [ ] Version bumped in `manifest.config.ts` (`PRODUCT_VERSION`)
-- [ ] A licence chosen for the public repository
+- [x] A licence chosen for the public repository (`LICENSE`: all rights
+      reserved, permission by request)
+- [ ] End-user terms settled — see the note under **Licence** above; store
+      users currently receive no terms with the package
 - [ ] Manual pass on five real sites, including one behind a login and one
       heavy single-page app

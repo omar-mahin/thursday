@@ -18,9 +18,9 @@
   },
   "keywords": [],
   "author": "",
-  "license": "ISC",
+  "license": "SEE LICENSE IN LICENSE",
   "type": "module",
-  "private": "true",
+  "private": true,
   "devDependencies": {
     "@playwright/test": "^1.62.1",
     "@types/chrome": "^0.2.8",

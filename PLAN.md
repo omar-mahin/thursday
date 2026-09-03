@@ -752,7 +752,12 @@ something anyone has to remember.
 depends on the `activeTab` grant that comes from clicking the browser action,
 and Playwright cannot click browser chrome — so that path, and
 `showSaveFilePicker`'s native dialog, are verified by hand. The manual pass on
-five real sites is still outstanding, as is a licence for the public repository.
+five real sites is still outstanding.
+
+**Licence.** All rights reserved (`LICENSE`). The source is published so the privacy claims can be
+checked by anyone who wants to; using it needs written permission. A public repository with no
+licence at all is the worst of both worlds — it reads as an invitation while granting nothing — so
+this states the position instead of leaving it to be assumed.
 
 **All six sprints complete.** It ships as a complete product — not an MVP waiting for a backend.
 Phase 2 then adds interpretation on top of a working evidence engine, which is the right order
