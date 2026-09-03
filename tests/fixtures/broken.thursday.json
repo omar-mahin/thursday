@@ -1,0 +1,7 @@
+{
+  "format": "thursday.audit",
+  "version": 99,
+  "exportedAt": 1700000100000,
+  "audit": { "id": "from-the-future", "url": "https://fixture.thursday.test/", "origin": "https://fixture.thursday.test" },
+  "findings": []
+}

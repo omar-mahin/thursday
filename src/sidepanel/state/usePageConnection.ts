@@ -1,6 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectPort, type TypedPort } from '../../shared/messaging/port';
-import type { SelectedElement, ThursdayMessage, ToolbarAction } from '../../shared/messaging/protocol';
+import type {
+  ElementRectReply,
+  SelectedElement,
+  ThursdayMessage,
+  ToolbarAction,
+} from '../../shared/messaging/protocol';
 import { assertNever, USER_MESSAGES } from '../../shared/result';
 import type { ElementPreview, PageSnapshot, ResolutionLevel, Viewport } from '../../shared/types';
 
@@ -19,6 +24,8 @@ export type PageState = {
   /** Which rung of the resolution ladder last found the selected element. */
   resolution: ResolutionLevel | null | 'unresolved';
   snapshot: PageSnapshot | null;
+  /** The page's answer to the last screenshot rect request. */
+  elementRect: (ElementRectReply & { at: number }) | null;
 };
 
 export type LogEntry = { at: number; direction: 'in' | 'out'; type: ThursdayMessage['type'] };
@@ -36,6 +43,7 @@ const INITIAL: PageState = {
   pinClicked: null,
   resolution: null,
   snapshot: null,
+  elementRect: null,
 };
 
 const LOG_LIMIT = 40;
@@ -120,6 +128,9 @@ export function usePageConnection(): {
         case 'SNAPSHOT_READY':
           setPage((state) => ({ ...state, snapshot: message.payload }));
           return;
+        case 'ELEMENT_RECT':
+          setPage((state) => ({ ...state, elementRect: { ...message.payload, at: Date.now() } }));
+          return;
         case 'TOOLBAR_ACTION':
           setPage((state) => ({ ...state, lastToolbarAction: message.payload.action }));
           return;
@@ -150,6 +161,7 @@ export function usePageConnection(): {
         case 'CLEAR_PINS':
         case 'SET_ACTIVE_FINDING':
         case 'FOCUS_ELEMENT':
+        case 'REQUEST_ELEMENT_RECT':
           return;
         default:
           assertNever(message, 'sidepanel.onMessage');

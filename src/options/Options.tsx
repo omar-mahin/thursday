@@ -1,7 +1,8 @@
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { REQUIRED_PERMISSIONS } from '../../manifest.config';
 import { PRODUCT_NAME } from '../shared/constants/product';
 import { DEFAULT_SETTINGS, getSetting, setSetting, type Settings } from '../storage/settings';
+import { clearAll, deleteByOrigin, usage, type StorageUsage } from '../storage/audits';
 
 const PERMISSION_REASONS: Record<(typeof REQUIRED_PERMISSIONS)[number], string> = {
   storage: 'Remembers your settings and audits on this machine.',
@@ -10,20 +11,41 @@ const PERMISSION_REASONS: Record<(typeof REQUIRED_PERMISSIONS)[number], string> 
   sidePanel: 'Shows the audit panel beside the page.',
 };
 
+const formatBytes = (bytes: number): string => {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+};
+
 export function Options(): React.ReactElement {
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [cleared, setCleared] = useState(false);
+  const [stored, setStored] = useState<StorageUsage | null>(null);
+  const [storageError, setStorageError] = useState<string | null>(null);
+
+  const loadUsage = useCallback(() => {
+    void usage()
+      .then((next) => {
+        setStored(next);
+        setStorageError(null);
+      })
+      .catch(() => setStorageError(`This browser will not let ${PRODUCT_NAME} open its local database.`));
+  }, []);
 
   useEffect(() => {
     void (async () => {
-      const [theme, minTouchTarget, toolbarPosition] = await Promise.all([
+      const [theme, minTouchTarget, toolbarPosition, keepHistory, captureScreenshots] = await Promise.all([
         getSetting('theme'),
         getSetting('minTouchTarget'),
         getSetting('toolbarPosition'),
+        getSetting('keepHistory'),
+        getSetting('captureScreenshots'),
       ]);
-      setSettings({ theme, minTouchTarget, toolbarPosition });
+      setSettings({ theme, minTouchTarget, toolbarPosition, keepHistory, captureScreenshots });
     })();
   }, []);
+
+  useEffect(loadUsage, [loadUsage]);
 
   const update = <K extends keyof Settings>(name: K, value: Settings[K]): void => {
     setSettings((current) => ({ ...current, [name]: value }));
@@ -112,16 +134,99 @@ export function Options(): React.ReactElement {
         <div className="section-title">Stored data</div>
         <div className="field">
           <div>
+            <div className="field-label">Keep audit history</div>
+            <div className="hint">
+              Stores finished audits on this machine so they survive a restart. Turning it off means an
+              audit lasts until you close the panel, unless you save it as a file.
+            </div>
+          </div>
+          <label className="switch">
+            {/* Named by what it controls. Without this the accessible name is
+                "On", which says the state and not the subject. */}
+            <input
+              type="checkbox"
+              aria-label="Keep audit history"
+              checked={settings.keepHistory}
+              onChange={(event) => update('keepHistory', event.currentTarget.checked)}
+            />
+            <span aria-hidden="true">{settings.keepHistory ? 'On' : 'Off'}</span>
+          </label>
+        </div>
+        <div className="field">
+          <div>
+            <div className="field-label">Allow screenshot crops</div>
+            <div className="hint">
+              Lets you attach a cropped screenshot to a finding. Off by default: a picture of the page is
+              the one kind of evidence that can contain something {PRODUCT_NAME} otherwise never reads.
+              Password and payment fields are refused even when this is on.
+            </div>
+          </div>
+          <label className="switch">
+            <input
+              type="checkbox"
+              aria-label="Allow screenshot crops"
+              checked={settings.captureScreenshots}
+              onChange={(event) => update('captureScreenshots', event.currentTarget.checked)}
+            />
+            <span aria-hidden="true">{settings.captureScreenshots ? 'On' : 'Off'}</span>
+          </label>
+        </div>
+
+        {storageError ? (
+          <p className="hint" role="alert" style={{ color: 'var(--danger)' }}>
+            {storageError}
+          </p>
+        ) : (
+          <p className="hint" style={{ margin: '10px 0 0' }}>
+            {stored
+              ? `${stored.audits} audit${stored.audits === 1 ? '' : 's'}, ${stored.findings} finding${
+                  stored.findings === 1 ? '' : 's'
+                }, ${stored.screenshots} screenshot${stored.screenshots === 1 ? '' : 's'}${
+                  stored.bytes === null ? '' : ` — about ${formatBytes(stored.bytes)} of browser storage`
+                }.`
+              : 'Reading local storage…'}
+          </p>
+        )}
+
+        {stored && stored.origins.length > 0 ? (
+          <ul className="origins">
+            {stored.origins.map((entry) => (
+              <li key={entry.origin}>
+                <span className="truncate mono">{entry.origin}</span>
+                <span className="hint">
+                  {entry.audits} audit{entry.audits === 1 ? '' : 's'}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => {
+                    void deleteByOrigin(entry.origin).then(loadUsage);
+                  }}
+                >
+                  Delete
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : null}
+
+        <div className="field">
+          <div>
             <div className="field-label">Clear everything</div>
-            <div className="hint">Removes settings and saved audits from this browser.</div>
+            <div className="hint">
+              Deletes every stored audit, finding and screenshot, and resets settings. This cannot be
+              undone, and files you saved yourself are not touched.
+            </div>
           </div>
           <button
             type="button"
+            className="danger"
             onClick={() => {
               void (async () => {
+                await clearAll().catch(() => undefined);
                 await chrome.storage.local.clear();
                 setSettings(DEFAULT_SETTINGS);
                 setCleared(true);
+                loadUsage();
               })();
             }}
           >
@@ -134,6 +239,7 @@ export function Options(): React.ReactElement {
           </p>
         ) : null}
       </section>
+
     </div>
   );
 }

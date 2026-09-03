@@ -1,0 +1,107 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Create your account</title>
+    <style>
+      body {
+        margin: 0;
+        padding: 32px;
+        background: #ffffff;
+        color: #16181d;
+        font: 16px/1.5 system-ui, sans-serif;
+      }
+      h1 { font-size: 28px; margin: 0 0 16px; }
+      p { margin: 0 0 24px; max-width: 60ch; }
+      .field { margin: 0 0 16px; }
+      label { display: block; margin-bottom: 8px; font-weight: 600; }
+      input, textarea {
+        display: block;
+        width: 320px;
+        min-height: 44px;
+        padding: 8px 12px;
+        font: inherit;
+        color: #16181d;
+        background: #ffffff;
+        border: 1px solid #6b6b6b;
+        border-radius: 8px;
+      }
+      button {
+        min-width: 180px;
+        min-height: 44px;
+        border: 0;
+        border-radius: 8px;
+        background: #14448c;
+        color: #ffffff;
+        font: inherit;
+        font-weight: 600;
+        cursor: pointer;
+      }
+    </style>
+  </head>
+  <body>
+    <!--
+      One deliberate defect: nine fields in a single ungrouped form, which is
+      what UX-003 is for. The finding is about the <form>, and the form contains
+      a password field.
+      
+      That combination is the only way the screenshot guard can be reached,
+      because a sensitive field is redacted out of the snapshot during
+      collection and no rule can produce a finding about one directly. So the
+      case worth defending is exactly this: a finding about a container that
+      happens to hold a secret. Sprint 5 tests the refusal here.
+
+      No field carries a value. Nothing on this page is a planted secret.
+    -->
+    <main>
+      <h1>Create your account</h1>
+      <p>
+        We need a few details to set up your account. You can change any of them later from your
+        account settings.
+      </p>
+      <form>
+        <div class="field">
+          <label for="fullName">Full name</label>
+          <input id="fullName" name="fullName" type="text" autocomplete="name" />
+        </div>
+        <div class="field">
+          <label for="company">Company</label>
+          <input id="company" name="company" type="text" autocomplete="organization" />
+        </div>
+        <div class="field">
+          <label for="street">Street address</label>
+          <input id="street" name="street" type="text" autocomplete="street-address" />
+        </div>
+        <div class="field">
+          <label for="city">City</label>
+          <input id="city" name="city" type="text" autocomplete="address-level2" />
+        </div>
+        <div class="field">
+          <label for="region">Region</label>
+          <input id="region" name="region" type="text" autocomplete="address-level1" />
+        </div>
+        <div class="field">
+          <label for="postcode">Postcode</label>
+          <input id="postcode" name="postcode" type="text" autocomplete="postal-code" />
+        </div>
+        <div class="field">
+          <label for="country">Country</label>
+          <input id="country" name="country" type="text" autocomplete="country-name" />
+        </div>
+        <div class="field">
+          <label for="jobTitle">Job title</label>
+          <input id="jobTitle" name="jobTitle" type="text" />
+        </div>
+        <div class="field">
+          <label for="about">About you</label>
+          <textarea id="about" name="about" rows="3"></textarea>
+        </div>
+        <div class="field">
+          <label for="newPassword">Choose a password</label>
+          <input id="newPassword" name="newPassword" type="password" autocomplete="new-password" />
+        </div>
+        <button type="submit">Create account</button>
+      </form>
+    </main>
+  </body>
+</html>

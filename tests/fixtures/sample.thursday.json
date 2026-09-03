@@ -1,0 +1,100 @@
+{
+  "format": "thursday.audit",
+  "version": 1,
+  "exportedAt": 1700000100000,
+  "product": { "name": "Thursday", "version": "0.1.0" },
+  "page": {
+    "url": "https://fixture.thursday.test/accessibility.html",
+    "title": "Accessibility defects",
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "devicePixelRatio": 1,
+      "scrollX": 0,
+      "scrollY": 0,
+      "documentWidth": 1280,
+      "documentHeight": 2400
+    }
+  },
+  "audit": {
+    "id": "imported-audit-1",
+    "url": "https://fixture.thursday.test/accessibility.html",
+    "origin": "https://fixture.thursday.test",
+    "title": "Accessibility defects",
+    "createdAt": 1700000000000,
+    "updatedAt": 1700000000000,
+    "viewportWidth": 1280,
+    "viewportHeight": 720,
+    "categories": ["a11y"],
+    "status": "completed",
+    "findingIds": ["imported-1", "imported-2"],
+    "truncated": false,
+    "elementsScanned": 120
+  },
+  "findings": [
+    {
+      "id": "imported-1",
+      "auditId": "imported-audit-1",
+      "ruleId": "A11Y-002",
+      "category": "a11y",
+      "type": "rule",
+      "title": "Imported: image has no alternative text",
+      "severity": "high",
+      "confidence": 1,
+      "summary": "A content image carries no alt attribute.",
+      "evidence": ["no alt attribute", "320 x 240 px"],
+      "impact": "A screen reader announces nothing for it.",
+      "recommendation": "Add alt text describing the image.",
+      "status": "open",
+      "elementIndex": 3,
+      "elementRef": {
+        "tagName": "img",
+        "role": "img",
+        "structuralPath": "main>figure:nth-of-type(1)>img:nth-of-type(1)",
+        "ancestry": ["main", "figure"],
+        "rect": { "x": 40, "y": 300, "width": 320, "height": 240 },
+        "centroid": { "x": 200, "y": 420 }
+      },
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    },
+    {
+      "id": "imported-2",
+      "auditId": "imported-audit-1",
+      "ruleId": "CNT-001",
+      "category": "content",
+      "type": "heuristic",
+      "title": "Imported: the page has no clear primary action",
+      "severity": "medium",
+      "confidence": 0.8,
+      "summary": "Nothing on the page reads as the next step.",
+      "evidence": ["no button above the fold"],
+      "impact": "Visitors have to work out what to do.",
+      "recommendation": "Give the page one obvious primary action.",
+      "status": "accepted",
+      "note": "Raised with the content team",
+      "inReport": true,
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    }
+  ],
+  "digest": {
+    "snapshotId": "imported-snapshot-1",
+    "capturedAt": 1700000000000,
+    "url": "https://fixture.thursday.test/accessibility.html",
+    "origin": "https://fixture.thursday.test",
+    "title": "Accessibility defects",
+    "viewport": {
+      "width": 1280,
+      "height": 720,
+      "devicePixelRatio": 1,
+      "scrollX": 0,
+      "scrollY": 0,
+      "documentWidth": 1280,
+      "documentHeight": 2400
+    },
+    "elementCount": 120,
+    "truncated": false,
+    "locations": [{ "index": 3, "documentRect": { "x": 40, "y": 300, "width": 320, "height": 240 } }]
+  }
+}

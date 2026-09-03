@@ -12,6 +12,7 @@ import {
   type FindingsState,
 } from '../../src/sidepanel/state/findings';
 import { placePin, PIN_SIZE } from '../../src/content/pins/pins';
+import { digestFor } from '../../src/audit/engine/digest';
 import { element, resetIndexes, snapshot } from './helpers/snapshot';
 
 beforeEach(resetIndexes);
@@ -203,33 +204,59 @@ describe('pins', () => {
     element({ tagName: 'img', documentRect: { x: 20, y: 100, width: 200, height: 150 } }),
   ]);
 
-  it('numbers pins in list order so the page and the panel agree', () => {
-    const views = load([
-      finding({ elementIndex: 1, elementRef: { tagName: 'img', structuralPath: '', ancestry: [], rect: { x: 0, y: 0, width: 0, height: 0 }, centroid: { x: 0, y: 0 } } }),
-      finding({ elementIndex: 0, elementRef: { tagName: 'button', structuralPath: '', ancestry: [], rect: { x: 0, y: 0, width: 0, height: 0 }, centroid: { x: 0, y: 0 } } }),
-    ]).views;
+  const reference = (tagName: string, rect = { x: 0, y: 0, width: 0, height: 0 }) => ({
+    tagName,
+    structuralPath: '',
+    ancestry: [],
+    rect,
+    centroid: { x: 0, y: 0 },
+  });
 
-    const pins = pinsFor(views, page);
+  /** The digest for a set of findings, exactly as the engine would build it. */
+  const digestOf = (findings: Finding[]) => digestFor(page, findings);
+
+  it('numbers pins in list order so the page and the panel agree', () => {
+    const findings = [
+      finding({ elementIndex: 1, elementRef: reference('img') }),
+      finding({ elementIndex: 0, elementRef: reference('button') }),
+    ];
+    const views = load(findings).views;
+
+    const pins = pinsFor(views, digestOf(findings));
     expect(pins.map((pin) => pin.ordinal)).toEqual([1, 2]);
     expect(pins[0]?.elementIndex).toBe(1);
     expect(pins[0]?.documentRect).toEqual({ x: 20, y: 100, width: 200, height: 150 });
     expect(ordinals(pins).get(pins[1]!.findingId)).toBe(2);
   });
 
+  it('stamps every pin with the snapshot its index belongs to', () => {
+    // Without this the page cannot tell a live index from a restored one, and
+    // index 42 of one snapshot is an unrelated element in another.
+    const findings = [finding({ elementIndex: 0, elementRef: reference('button') })];
+    const pins = pinsFor(load(findings).views, digestOf(findings));
+    expect(pins[0]?.snapshotId).toBe(page.id);
+  });
+
   it('gives no pin to a page-level finding', () => {
     // A pin with nothing behind it would be a lie about where the problem is.
-    const views = load([finding()]).views;
-    expect(pinsFor(views, page)).toEqual([]);
+    const findings = [finding()];
+    expect(pinsFor(load(findings).views, digestOf(findings))).toEqual([]);
   });
 
-  it('gives no pin when the snapshot has no such element', () => {
-    const views = load([
-      finding({ elementIndex: 99, elementRef: { tagName: 'div', structuralPath: '', ancestry: [], rect: { x: 0, y: 0, width: 0, height: 0 }, centroid: { x: 0, y: 0 } } }),
-    ]).views;
-    expect(pinsFor(views, page)).toEqual([]);
+  it('still pins a finding whose position was not recorded', () => {
+    // An imported file may carry no positions at all. The finding still points
+    // at a real element, so the page is asked to find it; the fallback rect is
+    // where it was, which is the best guess available.
+    const findings = [
+      finding({ elementIndex: 4, elementRef: reference('div', { x: 5, y: 6, width: 30, height: 40 }) }),
+    ];
+    const bare = { ...digestOf(findings), locations: [], viewport: { ...page.viewport, scrollY: 200 } };
+    const pins = pinsFor(load(findings).views, bare);
+    expect(pins).toHaveLength(1);
+    expect(pins[0]?.documentRect).toEqual({ x: 5, y: 206, width: 30, height: 40 });
   });
 
-  it('produces nothing without a snapshot', () => {
+  it('produces nothing without a digest', () => {
     expect(pinsFor(load([finding()]).views, null)).toEqual([]);
   });
 });

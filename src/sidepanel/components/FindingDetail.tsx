@@ -16,10 +16,22 @@ const STATUS_ACTIONS: Array<{ status: FindingStatus; label: string; hint: string
   { status: 'dismissed', label: 'Dismiss', hint: 'Not a problem here' },
 ];
 
+export type ShotControls = {
+  /** Off unless the user turned screenshots on in settings. */
+  enabled: boolean;
+  /** Object URL of the crop for this finding, if there is one. */
+  url: string | undefined;
+  capturing: boolean;
+  error: string | null;
+  onCapture(): void;
+  onDiscard(): void;
+};
+
 /** The finding card from spec section 24, with the states the MVP needs. */
 export function FindingDetail({
   view,
   ordinal,
+  shot,
   onStatus,
   onNote,
   onReport,
@@ -28,6 +40,7 @@ export function FindingDetail({
 }: {
   view: FindingView;
   ordinal: number | undefined;
+  shot: ShotControls;
   onStatus(status: FindingStatus): void;
   onNote(note: string): void;
   onReport(inReport: boolean): void;
@@ -120,6 +133,8 @@ export function FindingDetail({
         ))}
       </div>
 
+      <ScreenshotBlock finding={finding} shot={shot} />
+
       <label className="detail-note">
         <span className="section-title">Note</span>
         <textarea
@@ -129,6 +144,52 @@ export function FindingDetail({
           onChange={(event) => onNote(event.currentTarget.value)}
         />
       </label>
+    </div>
+  );
+}
+
+/**
+ * The screenshot crop, when there is one to show.
+ *
+ * Nothing appears here unless the user has turned screenshots on, and the
+ * button is only offered for findings that point at an element -- there is
+ * nothing to photograph for a page-level finding.
+ */
+function ScreenshotBlock({
+  finding,
+  shot,
+}: {
+  finding: Finding;
+  shot: ShotControls;
+}): React.ReactElement | null {
+  if (!shot.enabled || !finding.elementRef) return null;
+  return (
+    <div className="finding-block">
+      <h3>Screenshot</h3>
+      {shot.url ? (
+        <figure className="shot-figure">
+          <img src={shot.url} alt={`Screenshot of ${finding.title}`} />
+        </figure>
+      ) : null}
+      <div className="detail-actions">
+        <button type="button" disabled={shot.capturing} onClick={shot.onCapture}>
+          {shot.capturing ? 'Capturing…' : shot.url ? 'Retake' : 'Capture'}
+        </button>
+        {shot.url ? (
+          <button type="button" onClick={shot.onDiscard}>
+            Remove
+          </button>
+        ) : null}
+      </div>
+      {shot.error ? (
+        <p className="hint" role="alert" style={{ color: 'var(--danger)', margin: '6px 0 0' }}>
+          {shot.error}
+        </p>
+      ) : (
+        <p className="hint" style={{ margin: '6px 0 0' }}>
+          Crops the visible tab to this element. Password and payment fields are refused.
+        </p>
+      )}
     </div>
   );
 }

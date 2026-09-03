@@ -5,6 +5,7 @@ import type {
   ElementSnapshot,
   PageSnapshot,
   Pin,
+  Rect,
   ResolutionLevel,
   Viewport,
 } from '../types';
@@ -49,10 +50,41 @@ export type ThursdayMessage =
   | { type: 'SET_ACTIVE_FINDING'; payload: { findingId: string | null } }
   | { type: 'FOCUS_ELEMENT'; payload: { ref: ElementReference } }
   | { type: 'ELEMENT_RESOLVED'; payload: { ref: ElementReference; level: ResolutionLevel | null } }
+  // -- screenshot crops (Sprint 5) -------------------------------------------
+  /** Panel -> page: bring an element on screen and say exactly where it landed. */
+  | { type: 'REQUEST_ELEMENT_RECT'; payload: { findingId: string; ref: ElementReference } }
+  | { type: 'ELEMENT_RECT'; payload: ElementRectReply }
   // -- toolbar intents -------------------------------------------------------
   | { type: 'TOOLBAR_ACTION'; payload: { action: ToolbarAction } }
   // -- failure ---------------------------------------------------------------
   | { type: 'ERROR'; payload: { code: ErrorCode; detail?: string } };
+
+/**
+ * The answer to REQUEST_ELEMENT_RECT.
+ *
+ * `pageVisible` and `sensitive` exist so the panel can refuse a capture rather
+ * than take a wrong or private one: the tab capture API photographs whichever
+ * tab is visible, and a crop of a password or payment field is exactly the
+ * thing Thursday goes out of its way never to read.
+ */
+export type ElementRectReply = {
+  findingId: string;
+  rect: Rect | null;
+  level: ResolutionLevel | null;
+  pageVisible: boolean;
+  sensitive: boolean;
+  devicePixelRatio: number;
+  /**
+   * The viewport the rect was measured against.
+   *
+   * Tab capture photographs whichever tab is in front, and switching tabs is
+   * not instant -- so the panel checks the image it got back really is this
+   * page before cutting a rect out of it. Without that check a mistimed
+   * capture crops the wrong page at plausible coordinates, which is a wrong
+   * screenshot rather than a failed one.
+   */
+  viewport: { width: number; height: number };
+};
 
 export type ThursdayMessageType = ThursdayMessage['type'];
 

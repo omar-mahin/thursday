@@ -3,28 +3,33 @@ import type {
   AuditOptions,
   Finding,
   PageSnapshot,
+  PageSnapshotDigest,
   RawFinding,
 } from '../../shared/types';
 import { isAuditable, type Rule, type RuleContext } from '../types';
 import { referenceFromSnapshot } from '../element/reference';
+import { digestFor } from './digest';
 import { applyCaps, dedupe } from './dedupe';
 import { rulesFor } from './registry';
 import { compareSeverity, resolveConfidence, resolveSeverity } from './severity';
+import { newId } from '../../shared/utils/id';
 
 export type AuditResult = {
   audit: Audit;
   findings: Finding[];
+  /**
+   * The trimmed snapshot this audit needs to outlive the session: where the
+   * pinned elements were, and which page they were on. Produced here so an
+   * audit is storable the moment it exists, rather than only if someone
+   * remembers to build one.
+   */
+  digest: PageSnapshotDigest;
   /** Findings dropped by the caps, reported rather than hidden. */
   suppressed: number;
   /** Rules that threw, so one bad rule cannot fail the whole audit. */
   failedRules: string[];
   durationMs: number;
 };
-
-const id = (): string =>
-  typeof crypto !== 'undefined' && 'randomUUID' in crypto
-    ? crypto.randomUUID()
-    : `${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
 
 /**
  * Runs the requested categories over a snapshot.
@@ -67,12 +72,12 @@ export function runAudit(
   });
   const { findings: capped, suppressed } = applyCaps(ranked);
 
-  const auditId = id();
+  const auditId = newId();
   const now = Date.now();
   const findings: Finding[] = capped.map((finding) => {
     const element = finding.elementIndex === undefined ? undefined : snapshot.elements[finding.elementIndex];
     const result: Finding = {
-      id: id(),
+      id: newId(),
       auditId,
       ruleId: finding.ruleId,
       category: finding.category,
@@ -112,7 +117,14 @@ export function runAudit(
     elementsScanned: candidates.length,
   };
 
-  return { audit, findings, suppressed, failedRules, durationMs: Date.now() - started };
+  return {
+    audit,
+    findings,
+    digest: digestFor(snapshot, findings),
+    suppressed,
+    failedRules,
+    durationMs: Date.now() - started,
+  };
 }
 
 /** Counts by severity, for the panel summary and the report header. */

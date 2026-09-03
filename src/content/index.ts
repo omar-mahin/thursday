@@ -1,14 +1,16 @@
 import { assertNever } from '../shared/result';
 import type { Envelope, ThursdayMessage, ToolbarAction } from '../shared/messaging/protocol';
 import { isEnvelope } from '../shared/messaging/protocol';
-import type { ElementReference, Pin, ResolutionLevel, Viewport } from '../shared/types';
+import type { ElementReference, Pin, Rect, ResolutionLevel, Viewport } from '../shared/types';
 import { describeElement, resolveReference } from '../audit/element/identity';
 import { getSetting, setSetting } from '../storage/settings';
 import { createHost, type ShadowHost } from './host';
 import { createHighlight, describeForLabel, type Highlight } from './overlay/highlight';
 import { createSelection, type Selection } from './selector/selection';
-import { createPinLayer, type PinLayer, type PinTarget } from './pins/pins';
+import { createPinLayer, type PinLayer } from './pins/pins';
+import { resolvePinTargets } from './pins/resolve';
 import { collectSnapshot } from './snapshot/collect';
+import { isSensitiveField } from './snapshot/redact';
 import { snapshotSingleElement } from './snapshot/element';
 import { toRect } from './snapshot/measure';
 import { createToolbar, type Toolbar } from './toolbar/toolbar';
@@ -59,6 +61,8 @@ function install(): void {
   let pins: PinLayer | null = null;
   /** Live elements from the most recent snapshot, index-aligned with it. */
   let measured: Element[] = [];
+  /** Which snapshot `measured` belongs to. Pins carry the same id. */
+  let measuredSnapshotId: string | null = null;
   let port: chrome.runtime.Port | null = null;
   /** The live element behind the current selection. Held directly, never
    *  re-queried, so identity cannot drift during a session. */
@@ -101,6 +105,9 @@ function install(): void {
       case 'FOCUS_ELEMENT':
         focusElement(message.payload.ref);
         return;
+      case 'REQUEST_ELEMENT_RECT':
+        measureForCapture(message.payload.findingId, message.payload.ref);
+        return;
       case 'RENDER_PINS':
         renderPins(message.payload.pins);
         return;
@@ -124,6 +131,7 @@ function install(): void {
       case 'SET_ACTIVE_FINDING':
       case 'PIN_CLICKED':
       case 'ELEMENT_RESOLVED':
+      case 'ELEMENT_RECT':
       case 'TOOLBAR_ACTION':
       case 'ERROR':
         return;
@@ -138,6 +146,7 @@ function install(): void {
       // Hold on to the live elements: pins and scroll-to-element then resolve
       // in constant time instead of walking the resolution ladder.
       measured = collected.elements;
+      measuredSnapshotId = collected.snapshot.id;
       post({ type: 'SNAPSHOT_READY', payload: collected.snapshot });
     } catch (error) {
       post({
@@ -183,20 +192,84 @@ function install(): void {
   };
 
   /**
-   * Draws the pins the panel asked for. Each pin prefers the element measured
-   * during the audit, and falls back to the resolution ladder when that element
-   * is gone -- a pin found that way is drawn dashed, because its position is a
-   * best guess rather than a measurement.
+   * Draws the pins the panel asked for. Deciding what each pin points at lives
+   * in pins/resolve.ts so it can be tested without a browser.
    */
   const renderPins = (requested: Pin[]): void => {
     if (!pins) return;
-    const targets: PinTarget[] = requested.map((pin) => {
-      const fromAudit = measured[pin.elementIndex];
-      if (fromAudit?.isConnected) return { pin, element: fromAudit, approximate: false };
-      const resolved = resolveReference(pin.ref, document, (target) => toRect(target.getBoundingClientRect()));
-      return { pin, element: resolved.element, approximate: true };
-    });
-    pins.render(targets);
+    pins.render(
+      resolvePinTargets(requested, {
+        snapshotId: measuredSnapshotId,
+        measured,
+        resolve: (reference) =>
+          resolveReference(reference, document, (target) => toRect(target.getBoundingClientRect())).element,
+      }),
+    );
+  };
+
+  /**
+   * Brings an element on screen and reports where it landed, so the panel can
+   * crop a screenshot to it.
+   *
+   * Two facts travel with the rect because the panel cannot check either one:
+   * whether this page is the visible tab (tab capture photographs whatever is
+   * on screen, not whatever we asked about), and whether the element is a
+   * sensitive field. Thursday never reads field contents, and it will not
+   * photograph them either.
+   */
+  const measureForCapture = (findingId: string, reference: ElementReference): void => {
+    const live = selected?.isConnected && selected.tagName.toLowerCase() === reference.tagName ? selected : null;
+    let element: Element | null = live;
+    let level: ResolutionLevel | null = null;
+    if (!element) {
+      const resolution = resolveReference(reference, document, (target) => toRect(target.getBoundingClientRect()));
+      element = resolution.element;
+      level = resolution.level;
+    }
+
+    const reply = (rect: Rect | null, sensitive: boolean): void => {
+      post({
+        type: 'ELEMENT_RECT',
+        payload: {
+          findingId,
+          rect,
+          level,
+          pageVisible: document.visibilityState === 'visible',
+          sensitive,
+          devicePixelRatio: window.devicePixelRatio,
+          viewport: { width: window.innerWidth, height: window.innerHeight },
+        },
+      });
+    };
+
+    if (!element) {
+      reply(null, false);
+      return;
+    }
+    // A crop of a card number is still a card number. The check covers the
+    // element itself and any field inside it, because a finding is often about
+    // the form row rather than the input.
+    const sensitive =
+      isSensitiveField(element) ||
+      [...element.querySelectorAll('input, textarea, select')].some(isSensitiveField);
+    if (sensitive) {
+      reply(null, true);
+      return;
+    }
+
+    // Instant, not smooth: a crop taken mid-animation is a crop of the wrong
+    // thing. Two frames, because scrolling settles after the first.
+    element.scrollIntoView({ block: 'center', inline: 'center', behavior: 'instant' });
+    const target = element;
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (disposed || !target.isConnected) {
+          reply(null, false);
+          return;
+        }
+        reply(toRect(target.getBoundingClientRect()), false);
+      }),
+    );
   };
 
   const connect = (): void => {

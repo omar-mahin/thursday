@@ -7,6 +7,9 @@ import { PRODUCT_NAME, PRODUCT_TAGLINE } from './src/shared/constants/product';
  */
 export const REQUIRED_PERMISSIONS = ['storage', 'activeTab', 'scripting', 'sidePanel'] as const;
 
+/** One version number, shown in the panel and stamped into every export. */
+export const PRODUCT_VERSION = '0.1.0';
+
 const ICONS = {
   16: 'icons/icon16.png',
   32: 'icons/icon32.png',
@@ -17,7 +20,7 @@ const ICONS = {
 export const manifest = {
   manifest_version: 3,
   name: PRODUCT_NAME,
-  version: '0.1.0',
+  version: PRODUCT_VERSION,
   description: PRODUCT_TAGLINE,
   // sidePanel.open() requires 116.
   minimum_chrome_version: '116',

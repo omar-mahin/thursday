@@ -365,11 +365,28 @@ to a colleague. So redaction still runs — it protects the export.
 
 `redact()` runs in the content script, before data crosses a port:
 
-- `input` values are **never read**. We emit `{ type, hasValue: boolean, length: 'empty'|'short'|'long' }`. No code path reads `.value` — enforced by an ESLint rule.
-- Never snapshotted at all: `type` in `password|hidden`, `autocomplete` matching `cc-*|password|one-time-code`, `name`/`id` matching `/pass|cvv|cvc|card|ssn|token|secret|otp/i`. Recorded as `{ redacted: true, role }`.
-- Text nodes capped at **200 chars** per element, **12k chars** per snapshot. Strings matching email / phone / long-digit patterns become `[email]`, `[phone]`, `[number]`.
+- `input` values are **never read**. Nor is anything derived from them: the spec sketched
+  `{ type, hasValue }` and even that is gone, because no rule consumes it and any signal about
+  contents is a privacy surface with no upside. Thursday cannot tell whether a field is filled,
+  which is a stronger claim than "we redact it". No code path reads `.value` in `src/content/` —
+  enforced by guard 1.
+- Never snapshotted at all: `type` in `password|hidden`, `autocomplete` matching
+  `cc-*|new-password|current-password|one-time-code`, `name`/`id` matching
+  `/pass|pwd|cvv|cvc|card|ssn|token|secret|otp|iban|account.?number/i`, and labels or placeholders
+  naming the same things. Recorded as `{ redacted: true }`.
+- **A redacted element is excluded from the candidate set**, so no rule can produce a finding about
+  a sensitive field at all — not a weaker finding, none. The consequence is worth stating: the only
+  way a screenshot could ever contain a secret is a finding about a *container* that holds one, and
+  that is the case the crop guard defends (Sprint 5).
+- Text nodes capped at **200 chars** per element, **12k chars** per snapshot. Strings matching
+  email / phone / long-digit patterns become `[email]`, `[phone]`, `[number]`.
 - No cookies, no `localStorage`, no headers, no request bodies — the extension never reads them.
-- Screenshots only on explicit user action.
+- **Screenshots are opt-in and off by default**, taken one finding at a time on explicit action,
+  and refused for anything that is or contains a sensitive field. A crop is the only evidence
+  Thursday stores that can contain something it otherwise never reads, so it is the one feature the
+  user has to turn on.
+- **Files are the only thing that leaves.** Nothing is written outside the browser profile unless
+  the user picks a location and a name.
 
 **CI guards** (these make the constraints real, not aspirational):
 
@@ -381,7 +398,10 @@ to a colleague. So redaction still runs — it protects the export.
 4. Playwright test: intercept all network from the extension origin during a full audit → assert 0 requests
 ```
 
-Guard 4 is the one that matters. It's the claim on the store listing, so it needs a test.
+Guard 4 is the one that matters. It's the claim on the store listing, so it needs a test. As of
+Sprint 5 it also covers storing an audit, writing both file formats, reading a file back, comparing
+two audits and reopening from history — the surfaces where "just sync it" or "just fetch the logo"
+would be easiest to slip in later.
 
 ---
 
@@ -408,15 +428,20 @@ type ThursdayAuditFile = {
   page: { url: string; title: string; viewport: Viewport };
   audit: Audit;
   findings: Finding[];
-  screenshots?: Record<string, string>;   // findingId → base64 crop, opt-out for small files
-  snapshotDigest?: PageSnapshotDigest;    // trimmed snapshot, enough to re-resolve elements
+  screenshots?: Record<string, string>;   // findingId → base64 crop, opt-in and off by default
+  digest: PageSnapshotDigest;             // trimmed snapshot, enough to re-resolve elements
 };
 ```
+
+As built, the digest keeps only the elements a finding points at, plus the page and viewport the
+audit described — twelve locations for a 1500-element page, not fifteen hundred. Reading a file is
+the one place Thursday handles input it did not produce, so `storage/file.ts` validates and copies
+every field rather than trusting the shape, and refuses a file from a newer format outright.
 
 - **Save** → `.thursday.json` via `showSaveFilePicker()` where available, else a Blob + `<a download>` fallback. No `downloads` permission needed either way.
 - **Open** → file input / drag-and-drop onto the side panel. Re-hydrates the audit, and if the current tab is on the same origin, re-resolves every element via the §2.5 ladder and re-renders pins with honest confidence states.
 - **Report** → self-contained HTML: inlined CSS, base64 crops, opens offline in any browser, prints cleanly to PDF. This is the shareable artifact for people who don't have Thursday.
-- **Re-audit & compare** (small, high-value, cheap once files exist): open a saved audit, re-run on the live page, and diff — `fixed` / `still open` / `new`. Turns Thursday from a snapshot tool into a regression tool. Slotted in Sprint 5 if the schedule holds.
+- **Re-audit & compare** (small, high-value, cheap once files exist): open a saved audit, re-run on the live page, and diff — `fixed` / `still open` / `new`. Turns Thursday from a snapshot tool into a regression tool. **Built in Sprint 5**, including annotation carry-over, so triage survives a re-run.
 
 Explicitly not built: sync, cloud backup, share links, team workspaces, any server.
 
@@ -556,16 +581,85 @@ accessibility tool that fails its own rules cannot ship.
 - **Pins prefer the element measured during the audit** (O(1), and it reflects the page as it is
   now); the resolution ladder is the fallback, and a pin found that way is drawn dashed because its
   position is a guess.
-- Status, notes and report membership live in memory. Sprint 5 persists them.
+- Status, notes and report membership live in memory. Sprint 5 persisted them.
 
-### Sprint 5 — Persistence, files & reports (3–4 days) ← next
-IndexedDB + migration runner; audit history per origin; screenshot crop + Blob storage; save/open
-`.thursday.json`; self-contained HTML report; data management in options (clear all, per-origin
-delete, storage usage); re-audit & compare if time allows.
-**Done when:** audits survive a browser restart; a saved file re-opens on a fresh profile and
-re-resolves its elements; exported HTML renders correctly with networking disabled.
+### Sprint 5 — Persistence, files & reports ✅ complete
 
-### Sprint 6 — Hardening & ship (3–4 days)
+**Delivered.** IndexedDB with a migration runner and three stores; audit history per origin, with
+per-audit and per-origin deletion and a real storage-usage readout in options; automatic saving of
+finished audits (switchable off); status, note and report membership persisted with the finding;
+save and open `.thursday.json` with full validation of an untrusted file; a self-contained HTML
+report; opt-in screenshot crops with a sensitive-field refusal; and re-audit comparison with
+annotation carry-over.
+
+**Verified:** 383 unit tests and 78 Playwright tests. IndexedDB is tested against real IndexedDB in
+real Chromium, not a mock — the store definitions, index lookups and transaction boundaries are
+exactly what a fake would get wrong. An audit provably survives the panel closing, reopens with its
+findings, statuses and notes, and re-pins a live page; deleting an audit leaves no orphan findings;
+clearing from options empties all three stores. The exported report is loaded from a route with
+every other request aborted, and provably fetches nothing. A crop of a form containing a password
+field is refused, and the *same* finding on the *same* page captures once the password field is
+removed — a controlled pair, so a guard that refused everything would fail. The zero-network guard
+now also covers storing, exporting, importing, comparing and reopening. And the new panel surfaces
+pass Thursday's own contrast rule.
+
+**Four defects the tests caught:**
+1. **A restored audit could pin the wrong elements.** An element index is only meaningful for the
+   snapshot it came from, and reopening an audit — or running a second one — hands the page indexes
+   from a different snapshot, where index 42 is an unrelated element. Snapshots now carry an id,
+   pins carry it too, and the page uses the fast path only when they match. Caught by design, then
+   pinned down by a test; the E2E pair also proves the fast path is still *used* when it is valid.
+2. **Screenshot crops were cut at the wrong offsets.** The code scaled the element rect by
+   `devicePixelRatio`, which is not the scale between CSS pixels and a captured image: browser zoom
+   changes it, and the capture is the real content area rather than whatever the page believes its
+   viewport to be. Under test the two differed by 87px and every crop was silently displaced. The
+   scale is now *measured* (`image.width / viewport.width`), which is exact in both cases, and a
+   capture that cannot be of this page at all is refused rather than cropped — a mistimed capture
+   would otherwise produce a wrong screenshot rather than a failed one.
+3. **The settings toggles were named "Off".** Their accessible name came from the state text beside
+   the checkbox, so a screen reader announced the value and never the subject. Found because a test
+   could not locate the control by name — which is the same problem a user would have had.
+4. **Typing a note reset the finding list.** The first cut wrote annotations back into the active
+   audit, whose identity the list effect keyed on, so every keystroke reloaded the list and moved
+   the selection. The reducer now owns annotations while the panel is open and they are merged back
+   only where they are needed — export, comparison, storage.
+
+**Design decisions:**
+- **The digest, not the snapshot, is what persists.** Storing 1500 fully-measured elements to
+  reopen one audit would cost megabytes for facts nothing reads back, so a stored audit keeps only
+  the page it described and where the pinned elements were. Re-finding them is the ladder's job.
+- **History is on by default and can be switched off.** History is the feature, but auditing a page
+  does write its URL and title to disk, and someone working on a private system is entitled to
+  decline that and still use the tool.
+- **Screenshots are off by default.** A crop is the only kind of evidence Thursday keeps that can
+  contain something it otherwise never reads. Where the guard actually has to work is subtler than
+  it looks: a sensitive field is redacted out of the snapshot during collection, so no rule can
+  produce a finding about one directly — the reachable case is a finding about a *container* that
+  happens to hold a secret, and that is what the fixture and the test cover.
+- **A file from a newer format is refused, not half-read.** Ignoring fields we do not understand
+  would let a v2 file open as a v1 audit with parts quietly missing, and the user could not tell.
+- **An audit file is treated as hostile input.** It can arrive by email, and its strings end up in
+  the panel and in an HTML report. No object from a file is ever spread into ours: every field is
+  read, type-checked and copied, unknown keys are left behind, and the report escapes everything and
+  emits only inline images and `http(s)` links.
+- **A re-audit inherits the user's triage.** Dismissing a finding and re-running must not resurrect
+  it; status, note and report membership belong to the person, not the run. Findings are matched by
+  rule plus element identity, using the same precedence as the resolution ladder — matching on
+  position first would report every reflowed page as entirely new.
+- **Findings are paired as multisets, not sets.** Six small targets becoming two is four fixed, and
+  calling that "unchanged" would hide the work.
+- **A reopened audit says so.** Without the banner the panel looks identical whether the findings
+  came from the live page or from a file someone emailed, and every pin would be read as a
+  measurement of the page in front of you.
+
+**Not automated:** `showSaveFilePicker` opens a native dialog no test can drive, so the tests
+exercise the `<a download>` fallback — same Blob, same file name, same bytes — and the picker itself
+is checked by hand. Also `chrome.tabs.captureVisibleTab` requires `<all_urls>` or `activeTab`
+specifically (a narrow host permission is refused outright), so `dist-test/` now grants `<all_urls>`
+to make the capture pipeline testable at all. The shipped manifest is unchanged, and a test asserts
+it never contains that string.
+
+### Sprint 6 — Hardening & ship (3–4 days) ← next
 Fixture pages (spec §40) plus a clean control page; Playwright E2E for both Definition-of-Done
 flows; performance pass against the snapshot budgets; Thursday audits its own UI; store listing
 that leads with local-only/no-account; packaging and privacy disclosures (the "does not collect

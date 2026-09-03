@@ -1,4 +1,12 @@
-import { expect, FIXTURE_ORIGIN, injectContentScript, test, toolbar } from './fixtures';
+import { resolve } from 'node:path';
+import {
+  expect,
+  FIXTURE_ORIGIN,
+  injectContentScript,
+  test,
+  testWithHostAccess,
+  toolbar,
+} from './fixtures';
 
 /**
  * Guard 4 (PLAN.md section 7). The zero-network claim is the product's main
@@ -31,3 +39,61 @@ test('the extension makes no network requests at all', async ({ context, extensi
   );
   expect(offenders, `unexpected requests:\n${offenders.join('\n')}`).toEqual([]);
 });
+
+/**
+ * The same claim across everything Sprint 5 added: storing audits, reading a
+ * file from disk, writing one out, and rendering a report. These are the
+ * surfaces where a "just sync it" or "just fetch the logo" would be easiest to
+ * slip in, so they are exercised explicitly rather than covered by inference.
+ */
+testWithHostAccess(
+  'storing, exporting and reopening audits makes no network requests either',
+  async ({ context, extensionId, requests, openFixture, activate }) => {
+    const page = await openFixture('accessibility.html');
+    await activate(page);
+
+    const panel = await context.newPage();
+    await panel.addInitScript(() => {
+      Reflect.deleteProperty(window, 'showSaveFilePicker');
+    });
+    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+
+    // Run, triage, store.
+    await panel.getByRole('button', { name: 'Full audit' }).click();
+    await expect(panel.locator('.detail')).toBeVisible();
+    await panel.locator('.detail').getByRole('button', { name: 'Add to report' }).click();
+    await panel.locator('.detail-note textarea').fill('A note that stays on this machine');
+    await expect(panel.locator('.history-row').first()).toBeVisible();
+
+    // Write both file formats.
+    await Promise.all([
+      panel.waitForEvent('download'),
+      panel.getByRole('button', { name: 'Save audit' }).click(),
+    ]);
+    await Promise.all([
+      panel.waitForEvent('download'),
+      panel.getByRole('button', { name: 'Save report' }).click(),
+    ]);
+
+    // Read one back in.
+    await panel.locator('input[type=file]').setInputFiles(resolve('tests/fixtures/sample.thursday.json'));
+    await expect(panel.locator('.notice')).toContainText('Opened from a file');
+
+    // Re-audit, so the comparison path runs too.
+    await panel.getByRole('button', { name: 'Full audit' }).click();
+    await expect(panel.locator('.finding-row').first()).toBeVisible();
+
+    // Reopen from history, and inspect storage usage in options.
+    await panel.locator('.history-open').first().click();
+    await expect(panel.locator('.notice')).toContainText('Reopened from history');
+
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await expect(options.locator('.origins li').first()).toBeVisible();
+
+    const offenders = requests.filter(
+      (url) => !url.startsWith(`${FIXTURE_ORIGIN}/`) && !url.startsWith('chrome-extension://'),
+    );
+    expect(offenders, `unexpected requests:\n${offenders.join('\n')}`).toEqual([]);
+  },
+);

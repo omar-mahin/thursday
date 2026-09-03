@@ -12,16 +12,42 @@ See [PLAN.md](PLAN.md) for the full engineering plan.
 
 ## Status
 
-Sprints 1–4 of 6 are complete. **Thursday audits pages and marks them up.**
+Sprints 1–5 of 6 are complete. **Thursday audits pages, marks them up, keeps the results and
+tells you what changed.**
 
 - **Sprint 1** — extension foundation: on-demand injection, shadow-DOM toolbar, typed messaging, four privacy guards.
 - **Sprint 2** — inspection: click any element and read its measured facts (box, type, color, accessibility, reference), plus the page snapshot pipeline behind it.
 - **Sprint 3** — the rule engine: 30 deterministic rules across accessibility, UI, UX, content, conversion and responsive layout, each finding carrying its own evidence.
 - **Sprint 4** — the findings UI: numbered pins on the page, grouped and filterable findings, the detail card, statuses, notes and report membership.
+- **Sprint 5** — persistence and files: audits survive a restart, save and reopen as `.thursday.json`, export as a self-contained HTML report, and re-audit to see what was fixed.
 
-Next is Sprint 5: IndexedDB persistence, saving and re-opening `.thursday.json` audit files, and the self-contained HTML report.
+Next is Sprint 6: hardening, performance and packaging for the store.
 
-Nothing persists across a browser restart yet — that is Sprint 5.
+## Keeping an audit
+
+Finished audits are stored on this machine and listed per site, so reopening one takes a click.
+Reopening says so on screen, because findings from last week are not a measurement of the page in
+front of you — and its pins are drawn dashed when their position had to be found by searching the
+live page rather than measured.
+
+Two file formats, for two readers:
+
+- **`.thursday.json`** is Thursday's own. It reopens with every finding, status and note intact, and
+  re-pins a live page. A file from a newer version is refused rather than half-read.
+- **An HTML report** is for everyone who does not have Thursday. One file, no scripts, nothing
+  loaded from the network: it opens offline in any browser and prints cleanly to PDF.
+
+**Re-audit and compare.** Run it, fix things, run it again: Thursday pairs the two audits up and
+tells you what is fixed, what is still open and what is new. Anything you dismissed stays
+dismissed, because triage belongs to you and not to the run.
+
+**Screenshots are off by default.** You can attach a cropped screenshot to a finding once you turn
+them on in settings. A crop is the only evidence Thursday stores that can contain something it
+otherwise never reads, so it is the one feature you have to ask for — and a crop of anything that
+is or contains a password or payment field is refused even then.
+
+Settings has the other end of this: how much is stored, deletion per site, delete everything, and a
+switch to keep no history at all.
 
 ## The rules
 
@@ -66,7 +92,7 @@ the cost of asking for no host permissions, and it is deliberate.
 | `npm run guard` | Static privacy guards (see below) |
 | `npm run test:unit` | Vitest — pure logic |
 | `npm run test:e2e` | Playwright — real Chromium with the extension loaded |
-| `npm run build:test` | Test-only build with host access to the fixture origin (see below) |
+| `npm run build:test` | Test-only build with wider host access (see below) |
 | `npm test` | All of the above, in order |
 
 First E2E run needs a browser: `npx playwright install chromium`.
@@ -82,10 +108,13 @@ Four checks turn the promises in PLAN.md section 1 into properties:
 
 Widening any of these has to break a test.
 
-The E2E suite loads two builds: `dist/` exactly as it ships, and `dist-test/` — a copy whose only
-difference is host access to a fake fixture origin that does not exist. Playwright cannot click a
-browser-chrome extension action, and that click is what grants `activeTab`, so without the second
-build the real injection path would be untestable. The product itself contains no test hooks.
+The E2E suite loads two builds: `dist/` exactly as it ships, and `dist-test/` — a copy that differs
+only in host access. Playwright cannot click a browser-chrome extension action, and that click is
+what grants `activeTab`, so without the second build the real injection path would be untestable.
+The copy grants a fake fixture origin that does not exist, plus `<all_urls>`, which Chrome demands
+specifically for `chrome.tabs.captureVisibleTab` — a narrow host permission is refused outright, so
+without it the screenshot pipeline could not be tested at all. The shipped manifest is unchanged,
+a test asserts it never contains that string, and the product itself contains no test hooks.
 
 ## Layout
 
@@ -93,12 +122,13 @@ build the real injection path would be untestable. The product itself contains n
 manifest.config.ts     typed manifest, the single source for permissions
 src/background/        service worker: router only, holds no state
 src/content/           injected on demand: shadow host, toolbar, selection, snapshot
-src/audit/             accessible names, implicit roles, element identity
+src/audit/             rules, engine, measurement, element identity, audit comparison
+src/report/            the self-contained HTML report
 src/sidepanel/         React audit UI, owns audit state
 src/popup/             activation entry point (the only place that can grant activeTab)
 src/options/           settings and data management
 src/shared/            types, message protocol, constants, utilities
-src/storage/           chrome.storage settings, (Sprint 5) IndexedDB
+src/storage/           settings, IndexedDB and its migrations, the audit file format
 scripts/               icon generator, privacy guard
 tests/                 unit (Vitest) · fixtures · e2e (Playwright)
 ```

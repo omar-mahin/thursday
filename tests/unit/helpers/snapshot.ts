@@ -102,6 +102,7 @@ export const named = (name: string, overrides: ElementOverrides = {}): ElementSn
 
 export function snapshot(elements: ElementSnapshot[], overrides: Partial<PageSnapshot> = {}): PageSnapshot {
   return {
+    id: 'snap-test',
     capturedAt: 1_700_000_000_000,
     durationMs: 12,
     url: 'https://example.test/page',

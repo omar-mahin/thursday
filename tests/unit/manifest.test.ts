@@ -37,3 +37,20 @@ describe('manifest', () => {
     expect(JSON.stringify(manifest)).not.toMatch(/https?:\/\//);
   });
 });
+
+/**
+ * The test build (dist-test/) deliberately widens host access so E2E can drive
+ * production code paths. These assert the two builds cannot be confused: the
+ * shipped one is the one with nothing extra in it.
+ */
+describe('the shipped build against the test build', () => {
+  it('never grants itself the capture permission the test build needs', () => {
+    // scripts/build-test-extension.mjs adds <all_urls> for captureVisibleTab.
+    // In the shipped build that call is authorised by activeTab and nothing else.
+    expect(JSON.stringify(manifest)).not.toContain('all_urls');
+  });
+
+  it('relies on activeTab for tab capture', () => {
+    expect(manifest.permissions).toContain('activeTab');
+  });
+});

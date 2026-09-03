@@ -30,6 +30,13 @@ export type StyleSheetFacts = {
 };
 
 export type PageSnapshot = {
+  /**
+   * Identifies this capture. Pins carry it so the page can tell whether the
+   * elements it measured are the ones a pin was computed against: after a
+   * second audit, or after restoring a saved one, an element index from
+   * another snapshot points at an arbitrary element.
+   */
+  id: string;
   capturedAt: number;
   /** How long collection took. Surfaced in the report, and budgeted in tests. */
   durationMs: number;
@@ -92,6 +99,10 @@ export type Finding = {
   elementIndex?: number;
   measurements?: Record<string, number | string | boolean>;
   status: FindingStatus;
+  /** The user's own words, kept with the finding and shown in the report. */
+  note?: string;
+  /** Whether the user picked this finding for the report. */
+  inReport?: boolean;
   createdAt: number;
   updatedAt: number;
 };
@@ -134,6 +145,8 @@ export type Audit = {
  */
 export type Pin = {
   findingId: string;
+  /** The snapshot `elementIndex` refers to. See PageSnapshot.id. */
+  snapshotId: string;
   ordinal: number;
   severity: Severity;
   elementIndex: number;
@@ -141,5 +154,37 @@ export type Pin = {
   documentRect: Rect;
   ref: ElementReference;
 };
+
+/** Where one element sat in the document when the audit ran. */
+export type ElementLocation = {
+  index: number;
+  documentRect: Rect;
+};
+
+/**
+ * What survives an audit once the snapshot is gone.
+ *
+ * Storing 1500 fully-measured elements to reopen one audit would cost megabytes
+ * for facts nothing reads back. The digest keeps only what a reopened audit
+ * actually needs: the page it described, and where the pinned elements were.
+ * Re-finding those elements on a live page is the resolution ladder's job, and
+ * `Finding.elementRef` already carries what it needs.
+ */
+export type PageSnapshotDigest = {
+  snapshotId: string;
+  capturedAt: number;
+  url: string;
+  origin: string;
+  title: string;
+  viewport: Viewport;
+  /** Elements in the original snapshot, so a reopened audit can say how much it saw. */
+  elementCount: number;
+  truncated: boolean;
+  /** Only the elements a finding points at. */
+  locations: ElementLocation[];
+};
+
+/** An audit as stored: the record plus the digest that makes it reopenable. */
+export type AuditRecord = Audit & { digest: PageSnapshotDigest };
 
 export type { ElementReference };

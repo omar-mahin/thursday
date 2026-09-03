@@ -4,6 +4,7 @@ import { measureAll, type Measured } from './measure';
 import { buildElementSnapshot } from './element';
 import { TEXT_BUDGET_PER_SNAPSHOT } from './redact';
 import { isFarOffscreen, isHiddenByStyle, isZeroArea } from './visibility';
+import { newId } from '../../shared/utils/id';
 
 /** Hard cap from PLAN.md section 5. Past this, low-priority elements are cut. */
 export const ELEMENT_CAP = 1500;
@@ -233,6 +234,7 @@ export function collectSnapshot(options: CollectOptions): Collected {
   });
 
   const snapshot: PageSnapshot = {
+    id: newId(),
     capturedAt: started,
     durationMs: Date.now() - started,
     url: location.href,

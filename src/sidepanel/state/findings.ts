@@ -1,11 +1,12 @@
 import type {
   Finding,
   FindingStatus,
-  PageSnapshot,
+  PageSnapshotDigest,
   Pin,
   Severity,
 } from '../../shared/types';
 import { severityRank } from '../../audit/engine/severity';
+import { locationIndex } from '../../audit/engine/digest';
 
 /**
  * Findings state as a pure reducer.
@@ -14,7 +15,9 @@ import { severityRank } from '../../audit/engine/severity';
  * all derivable from this, which keeps them unit-testable and keeps the React
  * components to rendering.
  *
- * Status and notes live in memory for now; Sprint 5 persists them to IndexedDB.
+ * Status, note and report membership are read from the finding and written back
+ * to it, so they survive a restart, a saved file and a re-audit of the same
+ * page. The reducer stays pure: App does the persisting.
  */
 export type FindingView = {
   finding: Finding;
@@ -59,10 +62,11 @@ export function reduce(state: FindingsState, action: FindingsAction): FindingsSt
       const views = action.findings.map((finding) => ({
         finding,
         status: finding.status,
-        inReport: false,
-        note: '',
+        inReport: finding.inReport ?? false,
+        note: finding.note ?? '',
       }));
-      return { ...state, views, selectedId: views[0]?.finding.id ?? null };
+      const visible = filterViews({ ...state, views, selectedId: null });
+      return { ...state, views, selectedId: visible[0]?.finding.id ?? null };
     }
     case 'clear':
       return { ...EMPTY_STATE, severities: state.severities, showClosed: state.showClosed };
@@ -167,24 +171,35 @@ export function countByStatus(views: readonly FindingView[]): Record<FindingStat
 /**
  * The pins the page should draw, numbered to match the list.
  *
- * Only findings that point at an element get a pin, and only when the snapshot
- * still has that element -- a pin with nothing behind it would be a lie about
- * where the problem is.
+ * Built from the digest rather than a live snapshot, so a reopened audit pins
+ * exactly as a fresh one does -- the panel does not need to be holding the
+ * snapshot the audit came from. Only findings that point at an element get a
+ * pin: a pin with nothing behind it would be a lie about where the problem is.
  */
-export function pinsFor(views: readonly FindingView[], snapshot: PageSnapshot | null): Pin[] {
-  if (!snapshot) return [];
+export function pinsFor(views: readonly FindingView[], digest: PageSnapshotDigest | null): Pin[] {
+  if (!digest) return [];
+  const locations = locationIndex(digest);
   const pins: Pin[] = [];
   for (const view of views) {
     const { finding } = view;
     if (finding.elementIndex === undefined || !finding.elementRef) continue;
-    const element = snapshot.elements[finding.elementIndex];
-    if (!element) continue;
+    const location = locations.get(finding.elementIndex);
     pins.push({
       findingId: finding.id,
+      snapshotId: digest.snapshotId,
       ordinal: pins.length + 1,
       severity: finding.severity,
       elementIndex: finding.elementIndex,
-      documentRect: element.documentRect,
+      // With no recorded position, the page has to find the element itself.
+      // The stored viewport rect plus the scroll offset it was taken at is the
+      // best starting guess, and the pin is drawn approximate either way.
+      documentRect:
+        location?.documentRect ?? {
+          x: finding.elementRef.rect.x + digest.viewport.scrollX,
+          y: finding.elementRef.rect.y + digest.viewport.scrollY,
+          width: finding.elementRef.rect.width,
+          height: finding.elementRef.rect.height,
+        },
       ref: finding.elementRef,
     });
   }
