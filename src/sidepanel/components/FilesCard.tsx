@@ -4,29 +4,34 @@ import { AUDIT_FILE_EXTENSION, PRODUCT_NAME } from '../../shared/constants/produ
 /**
  * Saving an audit to disk and opening one back up.
  *
- * Two formats, for two different readers. The JSON file is Thursday's own: it
- * reopens with every finding, note and status intact and re-pins on a live
- * page. The HTML report is for everyone else -- one self-contained file that
- * opens offline in any browser and prints to PDF.
+ * Three formats, for three different readers. The JSON file is Thursday's own:
+ * it reopens with every finding, comment, note and status intact and re-pins
+ * on a live page. The HTML report is for everyone else -- one self-contained
+ * file that opens offline in any browser. The PDF is for the ticket, the
+ * print-out and the client who will not open an HTML attachment.
  */
 export function FilesCard({
   canExport,
   reportCount,
   totalCount,
+  commentCount,
   busy,
   saving,
   onSaveAudit,
   onSaveReport,
+  onSavePdf,
   onOpenText,
 }: {
   canExport: boolean;
   reportCount: number;
   totalCount: number;
+  commentCount: number;
   busy: boolean;
   /** Writing a file. The save dialog gives no feedback of its own. */
   saving: boolean;
   onSaveAudit(): void;
   onSaveReport(): void;
+  onSavePdf(): void;
   onOpenText(text: string, name: string): void;
 }): React.ReactElement {
   const input = useRef<HTMLInputElement>(null);
@@ -52,19 +57,31 @@ export function FilesCard({
         <button type="button" disabled={!canExport || busy} onClick={onSaveReport}>
           Save report
         </button>
+        <button type="button" disabled={!canExport || busy} onClick={onSavePdf}>
+          Save PDF
+        </button>
         <button type="button" disabled={busy} onClick={() => input.current?.click()}>
           Open audit
         </button>
       </div>
       <p className="hint" style={{ margin: '6px 0 0' }}>
         {canExport
-          ? `Audit keeps everything and reopens in ${PRODUCT_NAME}; report is ${
+          ? `Audit keeps everything and reopens in ${PRODUCT_NAME}. Report and PDF both carry ${
               reportCount > 0
                 ? `the ${reportCount} finding${reportCount === 1 ? '' : 's'} you added`
                 : `all ${totalCount} finding${totalCount === 1 ? '' : 's'}`
-            }, as one HTML file that opens offline.`
+            }${commentCount > 0 ? ` and ${commentCount} comment${commentCount === 1 ? '' : 's'}` : ''}.`
           : `Run or open an audit first. ${PRODUCT_NAME} writes files only when you ask it to.`}
       </p>
+      {canExport ? (
+        /* Said once, here, because it is the only place the choice is made.
+           The PDF's built-in fonts cover Latin-1 and no more, and the report
+           itself repeats the count if any characters were actually dropped. */
+        <p className="hint" style={{ margin: '8px 0 0' }}>
+          The HTML report keeps every character exactly; the PDF replaces any it cannot draw with its
+          built-in fonts.
+        </p>
+      ) : null}
 
       <div
         className="dropzone"

@@ -1,8 +1,11 @@
 {
   "format": "thursday.audit",
-  "version": 1,
+  "version": 2,
   "exportedAt": 1700000100000,
-  "product": { "name": "Thursday", "version": "0.1.0" },
+  "product": {
+    "name": "Thursday",
+    "version": "0.1.0"
+  },
   "page": {
     "url": "https://fixture.thursday.test/accessibility.html",
     "title": "Accessibility defects",
@@ -25,9 +28,14 @@
     "updatedAt": 1700000000000,
     "viewportWidth": 1280,
     "viewportHeight": 720,
-    "categories": ["a11y"],
+    "categories": [
+      "a11y"
+    ],
     "status": "completed",
-    "findingIds": ["imported-1", "imported-2"],
+    "findingIds": [
+      "imported-1",
+      "imported-2"
+    ],
     "truncated": false,
     "elementsScanned": 120
   },
@@ -42,7 +50,10 @@
       "severity": "high",
       "confidence": 1,
       "summary": "A content image carries no alt attribute.",
-      "evidence": ["no alt attribute", "320 x 240 px"],
+      "evidence": [
+        "no alt attribute",
+        "320 x 240 px"
+      ],
       "impact": "A screen reader announces nothing for it.",
       "recommendation": "Add alt text describing the image.",
       "status": "open",
@@ -51,9 +62,20 @@
         "tagName": "img",
         "role": "img",
         "structuralPath": "main>figure:nth-of-type(1)>img:nth-of-type(1)",
-        "ancestry": ["main", "figure"],
-        "rect": { "x": 40, "y": 300, "width": 320, "height": 240 },
-        "centroid": { "x": 200, "y": 420 }
+        "ancestry": [
+          "main",
+          "figure"
+        ],
+        "rect": {
+          "x": 40,
+          "y": 300,
+          "width": 320,
+          "height": 240
+        },
+        "centroid": {
+          "x": 200,
+          "y": 420
+        }
       },
       "createdAt": 1700000000000,
       "updatedAt": 1700000000000
@@ -68,7 +90,9 @@
       "severity": "medium",
       "confidence": 0.8,
       "summary": "Nothing on the page reads as the next step.",
-      "evidence": ["no button above the fold"],
+      "evidence": [
+        "no button above the fold"
+      ],
       "impact": "Visitors have to work out what to do.",
       "recommendation": "Give the page one obvious primary action.",
       "status": "accepted",
@@ -95,6 +119,74 @@
     },
     "elementCount": 120,
     "truncated": false,
-    "locations": [{ "index": 3, "documentRect": { "x": 40, "y": 300, "width": 320, "height": 240 } }]
+    "locations": [
+      {
+        "index": 3,
+        "documentRect": {
+          "x": 40,
+          "y": 300,
+          "width": 320,
+          "height": 240
+        }
+      }
+    ]
+  },
+  "annotations": [
+    {
+      "id": "sample-comment-1",
+      "auditId": "imported-audit-1",
+      "body": "Imported: the two calls to action look identical, so nothing says which one to press.\n\nWorth trying one filled and one outlined.",
+      "elementRef": {
+        "tagName": "section",
+        "structuralPath": "main>section:nth-of-type(1)",
+        "ancestry": [
+          "main"
+        ],
+        "rect": {
+          "x": 0,
+          "y": 200,
+          "width": 800,
+          "height": 300
+        },
+        "centroid": {
+          "x": 400,
+          "y": 350
+        },
+        "accessibleName": "Get started"
+      },
+      "documentRect": {
+        "x": 0,
+        "y": 200,
+        "width": 800,
+        "height": 300
+      },
+      "attachments": [
+        {
+          "id": "sample-attachment-1",
+          "annotationId": "sample-comment-1",
+          "auditId": "imported-audit-1",
+          "mime": "image/png",
+          "bytes": 116,
+          "width": 48,
+          "height": 32,
+          "caption": "The two buttons, side by side",
+          "source": "file",
+          "createdAt": 1700000000000
+        }
+      ],
+      "createdAt": 1700000000000,
+      "updatedAt": 1700000000000
+    },
+    {
+      "id": "sample-comment-2",
+      "auditId": "imported-audit-1",
+      "body": "Imported: a comment about the page as a whole, with no element behind it.",
+      "attachments": [],
+      "createdAt": 1700000001000,
+      "updatedAt": 1700000001000
+    }
+  ],
+  "attachments": {
+    "sample-attachment-1": "data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAADAAAAAgCAIAAADbtmxLAAAAO0lEQVR4nO3OQQ0AIAwEwTogQQ+OqhJlVMN9eM1mBUzdfaJf2OqOLiAgICAgICAgICAgICAgICCgn6ABhMviiKnU9QUAAAAASUVORK5CYII="
   }
 }

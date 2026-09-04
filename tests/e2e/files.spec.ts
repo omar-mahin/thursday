@@ -32,7 +32,7 @@ test('opening a saved audit file shows its findings, notes and statuses', async 
   const panel = await openPanel(context, extensionId);
 
   await panel
-    .locator('input[type=file]')
+    .getByLabel('Open a saved audit file')
     .setInputFiles(resolve('tests/fixtures/sample.thursday.json'));
 
   await expect(panel.locator('.finding-row').first()).toBeVisible();
@@ -47,12 +47,26 @@ test('opening a saved audit file shows its findings, notes and statuses', async 
   await panel.locator('.finding-row', { hasText: 'no clear primary action' }).first().click();
   await expect(panel.locator('.detail-note textarea')).toHaveValue('Raised with the content team');
   await expect(panel.locator('.detail').getByRole('button', { name: 'In report' })).toBeVisible();
+
+  // And so did the comments, with the image inside one of them. The fixture is
+  // hand-written rather than exported by Thursday, so this is the reading path
+  // for a file the product did not produce.
+  await expect(panel.locator('.comment-row')).toHaveCount(2);
+  await expect(panel.locator('.comment-body').first()).toContainText(
+    'the two calls to action look identical',
+  );
+  await expect(panel.locator('.comment-marker').nth(1)).toHaveText('B');
+  await expect(panel.locator('.comment-head').nth(1)).toContainText('Whole page');
+  const attached = panel.locator('.attach-grid img');
+  await expect(attached).toHaveCount(1);
+  await expect(attached).toHaveAttribute('alt', 'The two buttons, side by side');
+  expect(await attached.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(48);
 });
 
 test('a file from a newer format is refused, not half-read', async ({ extensionId, context }) => {
   const panel = await openPanel(context, extensionId);
   await panel
-    .locator('input[type=file]')
+    .getByLabel('Open a saved audit file')
     .setInputFiles(resolve('tests/fixtures/broken.thursday.json'));
 
   await expect(panel.getByRole('alert')).toContainText('newer');
@@ -65,7 +79,7 @@ test('a file that is not an audit is refused with a plain explanation', async ({
   context,
 }) => {
   const panel = await openPanel(context, extensionId);
-  await panel.locator('input[type=file]').setInputFiles({
+  await panel.getByLabel('Open a saved audit file').setInputFiles({
     name: 'notes.json',
     mimeType: 'application/json',
     buffer: Buffer.from('{"shopping":["milk"]}'),
@@ -101,7 +115,7 @@ testWithHostAccess(
 
     // Reopen it in a panel that has never run an audit.
     const fresh = await openPanel(context, extensionId);
-    await fresh.locator('input[type=file]').setInputFiles({
+    await fresh.getByLabel('Open a saved audit file').setInputFiles({
       name: 'reopened.thursday.json',
       mimeType: 'application/json',
       buffer: Buffer.from(text),

@@ -1,4 +1,5 @@
-import type { Pin, Rect, Severity } from '../../shared/types';
+import { commentLabel } from '../../shared/utils/labels';
+import type { Pin, PinKind, Rect, Severity } from '../../shared/types';
 
 /**
  * Numbered pins over the audited elements (spec section 25).
@@ -24,7 +25,7 @@ export type PinTarget = {
 export type PinLayer = {
   render(targets: PinTarget[]): void;
   clear(): void;
-  setActive(findingId: string | null): void;
+  setActive(targetId: string | null): void;
   destroy(): void;
 };
 
@@ -60,7 +61,7 @@ export function placePin(
 
 export function createPinLayer(
   layer: HTMLElement,
-  onSelect: (findingId: string) => void,
+  onSelect: (targetId: string, kind: PinKind) => void,
 ): PinLayer {
   const controller = new AbortController();
   const container = document.createElement('div');
@@ -115,7 +116,7 @@ export function createPinLayer(
 
   const applyActive = (): void => {
     for (const { target, button } of entries) {
-      button.dataset['active'] = String(target.pin.findingId === active);
+      button.dataset['active'] = String(target.pin.targetId === active);
     }
   };
 
@@ -123,19 +124,31 @@ export function createPinLayer(
     render(targets) {
       container.replaceChildren();
       entries = targets.map((target) => {
+        const comment = target.pin.kind === 'comment';
         const button = document.createElement('button');
         button.type = 'button';
         button.className = 'pin';
-        button.dataset['severity'] = target.pin.severity satisfies Severity;
+        button.dataset['kind'] = target.pin.kind satisfies PinKind;
+        if (target.pin.severity) button.dataset['severity'] = target.pin.severity satisfies Severity;
         button.dataset['approximate'] = String(target.approximate);
-        button.dataset['findingId'] = target.pin.findingId;
-        button.textContent = String(target.pin.ordinal);
-        const name = target.approximate
-          ? `Finding ${target.pin.ordinal}, ${target.pin.severity}, position approximate`
-          : `Finding ${target.pin.ordinal}, ${target.pin.severity}`;
+        button.dataset['targetId'] = target.pin.targetId;
+        // Comments are lettered and findings numbered, so the two series on
+        // one page cannot be mistaken for each other -- a "3" that is somebody
+        // else's note reads as the third measured problem otherwise.
+        button.textContent = comment ? commentLabel(target.pin.ordinal) : String(target.pin.ordinal);
+        const name = [
+          comment
+            ? `Comment ${commentLabel(target.pin.ordinal)}`
+            : `Finding ${target.pin.ordinal}, ${target.pin.severity ?? 'unrated'}`,
+          target.approximate ? 'position approximate' : null,
+        ]
+          .filter((part) => part !== null)
+          .join(', ');
         button.setAttribute('aria-label', name);
         button.title = name;
-        button.addEventListener('click', () => onSelect(target.pin.findingId), { signal: controller.signal });
+        button.addEventListener('click', () => onSelect(target.pin.targetId, target.pin.kind), {
+          signal: controller.signal,
+        });
         container.append(button);
         return { target, button };
       });
@@ -146,8 +159,8 @@ export function createPinLayer(
       container.replaceChildren();
       entries = [];
     },
-    setActive(findingId) {
-      active = findingId;
+    setActive(targetId) {
+      active = targetId;
       applyActive();
     },
     destroy() {

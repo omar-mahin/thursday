@@ -3,7 +3,8 @@ import type { Pin } from '../../../src/shared/types';
 import { resolvePinTargets } from '../../../src/content/pins/resolve';
 
 const pin = (overrides: Partial<Pin> = {}): Pin => ({
-  findingId: 'f1',
+  targetId: 'f1',
+  kind: 'finding',
   snapshotId: 'snap-A',
   ordinal: 1,
   severity: 'high',
@@ -90,7 +91,7 @@ describe('what a pin points at', () => {
 
   it('resolves each pin independently', () => {
     const targets = resolvePinTargets(
-      [pin({ findingId: 'a', elementIndex: 0 }), pin({ findingId: 'b', elementIndex: 9 })],
+      [pin({ targetId: 'a', elementIndex: 0 }), pin({ targetId: 'b', elementIndex: 9 })],
       { snapshotId: 'snap-A', measured: [first, second], resolve: () => laddered },
     );
     expect(targets.map((target) => target.approximate)).toEqual([false, true]);

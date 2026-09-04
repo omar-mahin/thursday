@@ -17,28 +17,161 @@ test('the panel creates its stores and indexes on first open', async ({ extensio
 
   const shape = await panel.evaluate(
     () =>
-      new Promise<{ version: number; stores: string[]; auditIndexes: string[]; findingIndexes: string[] }>(
+      new Promise<{
+        version: number;
+        stores: string[];
+        auditIndexes: string[];
+        findingIndexes: string[];
+        annotationIndexes: string[];
+        attachmentIndexes: string[];
+      }>((resolve, reject) => {
+        const request = indexedDB.open('thursday');
+        request.onsuccess = () => {
+          const db = request.result;
+          const transaction = db.transaction([...db.objectStoreNames], 'readonly');
+          resolve({
+            version: db.version,
+            stores: [...db.objectStoreNames].sort(),
+            auditIndexes: [...transaction.objectStore('audits').indexNames].sort(),
+            findingIndexes: [...transaction.objectStore('findings').indexNames].sort(),
+            annotationIndexes: [...transaction.objectStore('annotations').indexNames].sort(),
+            attachmentIndexes: [...transaction.objectStore('attachments').indexNames].sort(),
+          });
+        };
+        request.onerror = () => reject(request.error);
+      }),
+  );
+
+  expect(shape.version).toBe(2);
+  expect(shape.stores).toEqual(['annotations', 'attachments', 'audits', 'blobs', 'findings']);
+  expect(shape.auditIndexes).toEqual(['createdAt', 'origin']);
+  expect(shape.findingIndexes).toEqual(['auditId']);
+  expect(shape.annotationIndexes).toEqual(['auditId', 'createdAt']);
+  // Both directions: deleting an audit sweeps attachments by audit, and
+  // deleting one comment sweeps them by comment.
+  expect(shape.attachmentIndexes).toEqual(['annotationId', 'auditId']);
+});
+
+/**
+ * The migration runner, against a database that really is at version 1.
+ *
+ * Written the day version 2 arrived, because this is the moment the runner
+ * stops being theoretical: a user who installed the previous build has audits
+ * on disk, and an upgrade that dropped them would be unrecoverable. The v1
+ * database is built here by hand rather than by checking out an old build, so
+ * the test states the old shape explicitly instead of trusting git.
+ */
+test('upgrading from version 1 adds the new stores and keeps the old rows', async ({
+  extensionId,
+  context,
+}) => {
+  /*
+   * Seeded from the popup, not from the panel.
+   *
+   * The panel opens the database as soon as it mounts -- history, crops and
+   * comments are all read on load -- and a `deleteDatabase` against a live
+   * connection is blocked until that connection closes. The product handles
+   * that correctly: `db.onversionchange` closes the handle and the next read
+   * reopens it. Which is exactly the problem for a test: the delete succeeds,
+   * the panel immediately reopens at the current version, and the seeding open
+   * at version 1 loses the race with a VersionError.
+   *
+   * The popup shares the extension origin and never touches IndexedDB, so it
+   * can lay down a version 1 database with nothing competing for it. It is
+   * then closed before the panel is opened, so nothing holds the connection
+   * when the migration runs.
+   */
+  const seeder = await context.newPage();
+  await seeder.goto(`chrome-extension://${extensionId}/popup.html`);
+
+  const seeded = await seeder.evaluate(
+    () =>
+      new Promise<boolean>((resolve, reject) => {
+        const wipe = indexedDB.deleteDatabase('thursday');
+        wipe.onerror = () => reject(wipe.error);
+        // Nothing should be holding it open here; if something is, say so
+        // rather than hanging until the test times out.
+        wipe.onblocked = () => reject(new Error('deleteDatabase was blocked: something still has it open'));
+        wipe.onsuccess = () => {
+          const open = indexedDB.open('thursday', 1);
+          open.onupgradeneeded = () => {
+            const db = open.result;
+            const audits = db.createObjectStore('audits', { keyPath: 'id' });
+            audits.createIndex('origin', 'origin');
+            audits.createIndex('createdAt', 'createdAt');
+            const findings = db.createObjectStore('findings', { keyPath: 'id' });
+            findings.createIndex('auditId', 'auditId');
+            db.createObjectStore('blobs', { keyPath: 'findingId' });
+          };
+          open.onerror = () => reject(open.error);
+          open.onsuccess = () => {
+            const db = open.result;
+            const write = db.transaction(['audits', 'findings'], 'readwrite');
+            write.objectStore('audits').put({
+              id: 'legacy-audit',
+              origin: 'https://example.test',
+              url: 'https://example.test/',
+              title: 'Before comments existed',
+              createdAt: 1,
+              updatedAt: 1,
+              findingIds: ['legacy-finding'],
+              categories: ['a11y'],
+              status: 'completed',
+              truncated: false,
+              elementsScanned: 10,
+              viewportWidth: 1280,
+              viewportHeight: 720,
+              framesNotInspected: { crossOrigin: 0, sameOrigin: 0 },
+              digest: { snapshotId: 's', locations: [] },
+            });
+            write.objectStore('findings').put({ id: 'legacy-finding', auditId: 'legacy-audit', ruleId: 'A11Y-001' });
+            write.oncomplete = () => {
+              db.close();
+              resolve(true);
+            };
+            write.onerror = () => reject(write.error);
+          };
+        };
+      }),
+  );
+  expect(seeded).toBe(true);
+  await seeder.close();
+
+  // Opening the panel opens the database at the version this build wants,
+  // which is what runs the migration.
+  const panel = await context.newPage();
+  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await expect(panel.locator('.panel-head')).toBeVisible();
+  await expect(panel.locator('.history-row')).toHaveCount(1);
+
+  const after = await panel.evaluate(
+    () =>
+      new Promise<{ version: number; stores: string[]; audits: number; findings: number }>(
         (resolve, reject) => {
           const request = indexedDB.open('thursday');
           request.onsuccess = () => {
             const db = request.result;
-            const transaction = db.transaction([...db.objectStoreNames], 'readonly');
-            resolve({
-              version: db.version,
-              stores: [...db.objectStoreNames].sort(),
-              auditIndexes: [...transaction.objectStore('audits').indexNames].sort(),
-              findingIndexes: [...transaction.objectStore('findings').indexNames].sort(),
-            });
+            const read = db.transaction(['audits', 'findings'], 'readonly');
+            const audits = read.objectStore('audits').count();
+            const findings = read.objectStore('findings').count();
+            read.oncomplete = () =>
+              resolve({
+                version: db.version,
+                stores: [...db.objectStoreNames].sort(),
+                audits: audits.result,
+                findings: findings.result,
+              });
+            read.onerror = () => reject(read.error);
           };
           request.onerror = () => reject(request.error);
         },
       ),
   );
 
-  expect(shape.version).toBe(1);
-  expect(shape.stores).toEqual(['audits', 'blobs', 'findings']);
-  expect(shape.auditIndexes).toEqual(['createdAt', 'origin']);
-  expect(shape.findingIndexes).toEqual(['auditId']);
+  expect(after.version).toBe(2);
+  expect(after.stores).toEqual(['annotations', 'attachments', 'audits', 'blobs', 'findings']);
+  expect(after.audits).toBe(1);
+  expect(after.findings).toBe(1);
 });
 
 testWithHostAccess(

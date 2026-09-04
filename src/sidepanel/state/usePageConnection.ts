@@ -1,34 +1,85 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectPort, type TypedPort } from '../../shared/messaging/port';
 import type {
+  AnnotationTarget,
+  CaptureBandReply,
   ElementRectReply,
   SelectedElement,
   ThursdayMessage,
   ToolbarAction,
 } from '../../shared/messaging/protocol';
 import { assertNever, USER_MESSAGES } from '../../shared/result';
-import type { ElementPreview, PageSnapshot, ResolutionLevel, Viewport } from '../../shared/types';
+import type { ElementPreview, PageSnapshot, PinKind, ResolutionLevel, Viewport } from '../../shared/types';
 
 export type PageState = {
   activated: boolean;
   url: string | null;
   title: string | null;
   viewport: Viewport | null;
-  lastToolbarAction: ToolbarAction | null;
+  /**
+   * The last button pressed on the page toolbar, stamped.
+   *
+   * Stamped for the same reason PIN_CLICKED is: pressing Audit twice is two
+   * requests to audit, and an unstamped value would compare equal the second
+   * time and be dropped.
+   */
+  lastToolbarAction: { action: ToolbarAction; at: number } | null;
   error: string | null;
   selecting: boolean;
   hovered: ElementPreview | null;
   selection: SelectedElement | null;
   /** Last pin the user clicked on the page. */
-  pinClicked: { findingId: string; at: number } | null;
+  pinClicked: { targetId: string; kind: PinKind; at: number } | null;
+  /** True while the page is waiting for the user to click a comment anchor. */
+  annotating: boolean;
+  /** The last element picked for a comment. */
+  annotationTarget: (AnnotationTarget & { at: number }) | null;
   /** Which rung of the resolution ladder last found the selected element. */
   resolution: ResolutionLevel | null | 'unresolved';
   snapshot: PageSnapshot | null;
   /** The page's answer to the last screenshot rect request. */
   elementRect: (ElementRectReply & { at: number }) | null;
+  /**
+   * The page's answer to the last CAPTURE_BAND, stamped.
+   *
+   * Stamped because two screenfuls can answer identically -- a page that
+   * refuses to scroll answers with the same position and the same empty target
+   * list every time -- and the second answer still has to move the sequence
+   * along rather than look like no answer at all.
+   */
+  band: (CaptureBandReply & { at: number }) | null;
 };
 
 export type LogEntry = { at: number; direction: 'in' | 'out'; type: ThursdayMessage['type'] };
+
+/** Reconnect tries before the panel admits the worker is not coming back. */
+const RECONNECT_ATTEMPTS = 4;
+const RECONNECT_DELAY_MS = 250;
+
+/**
+ * Messages held while the port is being re-established, and how long for.
+ *
+ * The click that discovers a dead worker is the one that loses its message.
+ * Reconnecting takes a moment, so without this the first press after an idle
+ * period always fails and the second works -- which is a fair description of
+ * the bug this was reported as, only with an explanation attached. Holding the
+ * message and sending it when the port comes back makes the first press work.
+ *
+ * Capped in both size and age. A message replayed seconds later is answering a
+ * question the user has stopped asking.
+ */
+const OUTBOX_LIMIT = 20;
+const OUTBOX_MAX_AGE_MS = 4000;
+
+/**
+ * Whether a message can be sent late.
+ *
+ * CAPTURE_BAND cannot. It is one step of a sequence that scrolls the user's
+ * page and has its own deadline, so a copy arriving after that deadline has
+ * passed would move the page for a sweep that has already given up. Losing it
+ * is correct; the sweep notices and stops.
+ */
+const replayable = (message: ThursdayMessage): boolean => message.type !== 'CAPTURE_BAND';
 
 const INITIAL: PageState = {
   activated: false,
@@ -41,9 +92,12 @@ const INITIAL: PageState = {
   hovered: null,
   selection: null,
   pinClicked: null,
+  annotating: false,
+  annotationTarget: null,
   resolution: null,
   snapshot: null,
   elementRect: null,
+  band: null,
 };
 
 const LOG_LIMIT = 40;
@@ -60,14 +114,57 @@ export function usePageConnection(): {
   const [page, setPage] = useState<PageState>(INITIAL);
   const [log, setLog] = useState<LogEntry[]>([]);
   const portRef = useRef<TypedPort | null>(null);
+  /** Messages waiting for a port. See OUTBOX_LIMIT. */
+  const outbox = useRef<{ at: number; message: ThursdayMessage }[]>([]);
 
   const record = useCallback((direction: 'in' | 'out', type: ThursdayMessage['type']) => {
     setLog((entries) => [{ at: Date.now(), direction, type }, ...entries].slice(0, LOG_LIMIT));
   }, []);
 
+  /*
+   * The port, reconnected when it drops.
+   *
+   * MV3 service workers are meant to die. A connected port keeps one alive
+   * while messages are flowing and for a while after, but not indefinitely --
+   * leave the panel open and read a report for a few minutes and the worker is
+   * collected, which disconnects both ports.
+   *
+   * The content script has always reconnected. The panel did not: it set its
+   * port to null and left it there, so `send` quietly dropped everything
+   * afterwards. Nothing in the panel looked broken -- the findings were still
+   * on screen -- but every button that talks to the page had stopped working,
+   * and a request that expects an answer waited for one that could never come.
+   * That was the "Capturing..." that never finished.
+   *
+   * Reconnecting also wakes the worker, which is the intended way to bring one
+   * back. The re-announce afterwards is what makes the panel's idea of the page
+   * true again rather than merely connected.
+   */
   useEffect(() => {
-    const port = connectPort('sidepanel');
-    portRef.current = port;
+    let disposed = false;
+    let attempts = 0;
+    let retry: number | undefined;
+
+    const open = (): void => {
+      if (disposed) return;
+      const port = connectPort('sidepanel');
+      portRef.current = port;
+      wire(port);
+      // Anything the user asked for while there was no port to ask over.
+      const now = Date.now();
+      const held = outbox.current;
+      outbox.current = [];
+      for (const entry of held) {
+        if (now - entry.at > OUTBOX_MAX_AGE_MS) continue;
+        try {
+          port.post(entry.message);
+        } catch {
+          /* the new port is already gone; onDisconnect will handle it */
+        }
+      }
+    };
+
+    const wire = (port: TypedPort): void => {
 
     port.onMessage(({ message }) => {
       record('in', message.type);
@@ -132,7 +229,16 @@ export function usePageConnection(): {
           setPage((state) => ({ ...state, elementRect: { ...message.payload, at: Date.now() } }));
           return;
         case 'TOOLBAR_ACTION':
-          setPage((state) => ({ ...state, lastToolbarAction: message.payload.action }));
+          setPage((state) => ({
+            ...state,
+            lastToolbarAction: { action: message.payload.action, at: Date.now() },
+          }));
+          return;
+        case 'BAND_READY':
+          // Stamped, because two screenfuls can answer identically -- same
+          // scroll position, same empty target list -- and the second answer
+          // still has to move the sequence along.
+          setPage((state) => ({ ...state, band: { ...message.payload, at: Date.now() } }));
           return;
         case 'ERROR':
           setPage((state) => ({
@@ -144,7 +250,24 @@ export function usePageConnection(): {
           // Stamped so two clicks on the same pin still register.
           setPage((state) => ({
             ...state,
-            pinClicked: { findingId: message.payload.findingId, at: Date.now() },
+            pinClicked: { targetId: message.payload.targetId, kind: message.payload.kind, at: Date.now() },
+          }));
+          return;
+        case 'ANNOTATION_STATE':
+          setPage((state) => ({
+            ...state,
+            annotating: message.payload.active,
+            hovered: message.payload.active ? state.hovered : null,
+          }));
+          return;
+        case 'ANNOTATION_TARGET':
+          // Stamped, so commenting on the same element twice in a row is two
+          // separate targets rather than one the panel ignores.
+          setPage((state) => ({
+            ...state,
+            annotating: false,
+            hovered: null,
+            annotationTarget: { ...message.payload, at: Date.now() },
           }));
           return;
         case 'AUDIT_PROGRESS':
@@ -159,9 +282,12 @@ export function usePageConnection(): {
         case 'REQUEST_SNAPSHOT':
         case 'RENDER_PINS':
         case 'CLEAR_PINS':
-        case 'SET_ACTIVE_FINDING':
+        case 'SET_ACTIVE_PIN':
         case 'FOCUS_ELEMENT':
+        case 'CAPTURE_BAND':
         case 'REQUEST_ELEMENT_RECT':
+        case 'START_ANNOTATION':
+        case 'CANCEL_ANNOTATION':
           return;
         default:
           assertNever(message, 'sidepanel.onMessage');
@@ -170,10 +296,39 @@ export function usePageConnection(): {
 
     port.onDisconnect(() => {
       portRef.current = null;
+      if (disposed) return;
+      /*
+       * Backoff, and a ceiling.
+       *
+       * A worker that died of idleness comes back on the first try. One that
+       * cannot be reached at all -- the extension was reloaded or removed from
+       * under this panel -- would otherwise spin forever, so this gives up and
+       * says so rather than reconnecting in a loop nobody can see.
+       */
+      if (attempts >= RECONNECT_ATTEMPTS) {
+        setPage((state) => ({
+          ...state,
+          error: 'Lost the connection to the extension. Reopen the panel to reconnect.',
+        }));
+        return;
+      }
+      attempts += 1;
+      retry = self.setTimeout(() => {
+        open();
+        // Ask the page what it is, so the panel's idea of it is true again and
+        // not just its socket.
+        portRef.current?.post({ type: 'GET_PAGE_STATUS' });
+        portRef.current?.post({ type: 'REQUEST_PAGE_INFO' });
+      }, RECONNECT_DELAY_MS * attempts);
     });
+    };
+
+    open();
 
     return () => {
-      port.disconnect();
+      disposed = true;
+      if (retry !== undefined) clearTimeout(retry);
+      portRef.current?.disconnect();
       portRef.current = null;
     };
   }, [record]);
@@ -181,7 +336,20 @@ export function usePageConnection(): {
   const send = useCallback(
     (message: ThursdayMessage) => {
       record('out', message.type);
-      portRef.current?.post(message);
+      const port = portRef.current;
+      if (port) {
+        try {
+          port.post(message);
+          return;
+        } catch {
+          // postMessage on a port whose worker has gone throws. Treat it as a
+          // disconnect: onDisconnect is already on its way with a reconnect.
+          portRef.current = null;
+        }
+      }
+      if (!replayable(message)) return;
+      if (outbox.current.length >= OUTBOX_LIMIT) outbox.current.shift();
+      outbox.current.push({ at: Date.now(), message });
     },
     [record],
   );

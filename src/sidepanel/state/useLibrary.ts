@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import type { Audit, Finding, PageSnapshotDigest } from '../../shared/types';
+import type { Annotation, Audit, Finding, PageSnapshotDigest } from '../../shared/types';
 import {
   clearAll,
   deleteAudit,
@@ -20,6 +20,16 @@ export type ActiveAudit = {
   audit: Audit;
   digest: PageSnapshotDigest;
   findings: Finding[];
+  /**
+   * Comments that came in with an opened file.
+   *
+   * Only ever set for `source: 'file'`. A live or stored audit reads its
+   * comments from IndexedDB instead, so carrying them here would be a second
+   * copy that could disagree with the first.
+   */
+  annotations?: Annotation[];
+  /** attachmentId -> data URL, alongside `annotations`. */
+  attachments?: Record<string, string>;
   /** Live runs only. */
   suppressed: number;
   failedRules: string[];
@@ -183,18 +193,21 @@ export function useLibrary(origin: string | null): {
         audit: file.audit,
         digest: file.digest,
         findings: file.findings,
+        annotations: file.annotations ?? [],
+        attachments: file.attachments ?? {},
         suppressed: 0,
         failedRules: [],
         persisted: false,
         openedAt: Date.now(),
       };
+      const comments = file.annotations?.length ?? 0;
       setState((current) => ({
         ...current,
         busy: false,
         warnings,
-        status: `Opened ${file.findings.length} finding${file.findings.length === 1 ? '' : 's'} from ${
-          file.page.title || file.page.url || 'a file'
-        }.`,
+        status: `Opened ${file.findings.length} finding${file.findings.length === 1 ? '' : 's'}${
+          comments > 0 ? ` and ${comments} comment${comments === 1 ? '' : 's'}` : ''
+        } from ${file.page.title || file.page.url || 'a file'}.`,
       }));
       return active;
     },

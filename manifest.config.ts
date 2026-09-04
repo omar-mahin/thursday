@@ -13,7 +13,7 @@ import {
 export const REQUIRED_PERMISSIONS = ['storage', 'activeTab', 'scripting', 'sidePanel'] as const;
 
 /** One version number, shown in the panel and stamped into every export. */
-export const PRODUCT_VERSION = '0.1.0';
+export const PRODUCT_VERSION = '1.0.1';
 
 const ICONS = {
   16: 'icons/icon16.png',

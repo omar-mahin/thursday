@@ -1,4 +1,4 @@
-import { readFileSync } from 'node:fs';
+import { readdirSync, readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { TOOLBAR_ICONS } from '../../src/content/toolbar/icons';
@@ -27,10 +27,19 @@ const SOURCES: Record<ToolbarAction, string> = {
   select: 'select.svg',
   comment: 'comment.svg',
   inspect: 'inspect.svg',
-  report: 'report.svg',
-  settings: 'settings.svg',
   close: 'cancel.svg',
 };
+
+/**
+ * Drawings in design/icons/ that no action uses.
+ *
+ * Both were buttons that got removed rather than icons nobody got round to:
+ * Report duplicated the panel's Save report and Save PDF, and Settings opened a
+ * page nobody reaches for mid-audit and which the popup already offers. The
+ * artwork is kept in case either comes back, and named here so an unused file
+ * is a decision on the record rather than a drawing somebody forgot to wire up.
+ */
+const UNUSED = ['report.svg', 'settings.svg'];
 
 const read = (file: string): string => readFileSync(resolve('design/icons', file), 'utf8');
 
@@ -64,6 +73,19 @@ describe('the toolbar icons', () => {
       expect(paths.length, `${action} has no geometry`).toBeGreaterThan(0);
       for (const d of paths) expect(d.trim(), `${action} has an empty path`).not.toBe('');
     }
+  });
+
+  it('accounts for every drawing in the folder', () => {
+    /*
+     * Both directions matter. An action pointing at a missing file fails the
+     * test below; a file no action points at fails here -- which is what
+     * happens when a new icon is added and nobody wires it to anything, and it
+     * is otherwise completely invisible.
+     */
+    const onDisk = readdirSync(resolve('design/icons'))
+      .filter((file) => file.endsWith('.svg'))
+      .sort();
+    expect(onDisk).toEqual([...Object.values(SOURCES), ...UNUSED].sort());
   });
 
   it('matches the SVG each one was drawn from', () => {

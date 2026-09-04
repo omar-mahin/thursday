@@ -139,10 +139,36 @@ test('Escape closes the open finding', async ({ openFixture, activate, extension
 test('the whole panel is reachable by keyboard', async ({ openFixture, activate, extensionId }) => {
   const { panel } = await audited(openFixture, activate, extensionId);
 
-  // Tab through the panel and confirm the important controls are reachable and
-  // that focus is always visible on something.
+  /*
+   * Tab through the panel and confirm the important controls are reachable and
+   * that focus is always visible on something.
+   *
+   * The number of presses is derived from the panel rather than fixed. It was
+   * fixed at forty, and adding the comments card pushed the audit button past
+   * it -- so the test failed for having grown, which is a test that measures
+   * its own constant instead of the panel.
+   */
+  const focusable = await panel
+    .locator(
+      'a[href], button:not([disabled]), input:not([disabled]), textarea:not([disabled]), select:not([disabled]), [tabindex]:not([tabindex="-1"])',
+    )
+    .count();
+  expect(focusable).toBeGreaterThan(10);
+
   const reached: string[] = [];
-  for (let step = 0; step < 40; step += 1) {
+  /*
+   * Tab until the audit button comes round, with a hard ceiling.
+   *
+   * This was `focusable + 2`, which is a guess at how far off the count is
+   * from the real tab order -- and the count is always a bit off, because a
+   * container with a tabindex, or a control that appears while tabbing, is not
+   * in the query. Photographing findings by default added two buttons to every
+   * open finding and the guess ran out, so the test failed for the panel having
+   * grown again. Twice the count is a ceiling that catches a genuine trap
+   * without pretending to know the exact number.
+   */
+  for (let step = 0; step < focusable * 2; step += 1) {
+    if (reached.some((entry) => entry.includes('Full audit'))) break;
     await panel.keyboard.press('Tab');
     const description = await panel.evaluate(() => {
       const active = document.activeElement as HTMLElement | null;

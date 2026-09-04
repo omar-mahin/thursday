@@ -16,6 +16,7 @@ export const REPORT_CSS = `
   --medium: #8a6300;
   --low: #2f5fd0;
   --info: #5b6270;
+  --comment: #0f6b6b;
 }
 * { box-sizing: border-box; }
 body {
@@ -109,4 +110,15 @@ footer.report-foot {
   a { color: inherit; text-decoration: none; }
   a[href]::after { content: " (" attr(href) ")"; font-size: 9pt; color: #555; }
 }
+
+/*
+ * Comments are visibly the user's own: a teal rule down the side and a
+ * lettered marker rather than a severity word, so nobody skims the report and
+ * reads somebody's opinion as a measured result.
+ */
+.comments h2 { color: var(--comment); }
+.finding.comment { border-left: 3px solid var(--comment); padding-left: 13px; }
+.finding.comment .sev[data-kind="comment"],
+.totals li[data-kind="comment"] { color: var(--comment); }
+.shot figcaption { font-size: 12px; color: var(--dim); padding: 6px 2px 0; }
 `;

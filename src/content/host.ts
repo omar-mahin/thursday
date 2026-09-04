@@ -6,6 +6,18 @@ export type ShadowHost = {
   root: ShadowRoot;
   /** Non-interactive full-viewport layer; children opt into pointer events. */
   layer: HTMLElement;
+  /**
+   * Takes Thursday off the page, without unmounting it.
+   *
+   * For screenshots. A tab capture photographs whatever is on screen, which
+   * includes our own toolbar and pins -- so a picture meant to show a client
+   * their button had Thursday's UI sitting on top of it. The overlay goes away
+   * for the length of a capture and comes back afterwards.
+   *
+   * `visibility` rather than `display`, so nothing reflows and the toolbar
+   * comes back exactly where the user left it.
+   */
+  setVisible(visible: boolean): void;
   destroy(): void;
 };
 
@@ -96,6 +108,9 @@ export function createHost(): ShadowHost {
     host,
     root,
     layer,
+    setVisible(visible) {
+      layer.style.visibility = visible ? '' : 'hidden';
+    },
     destroy() {
       observer.disconnect();
       contained.abort();

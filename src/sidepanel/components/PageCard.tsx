@@ -55,7 +55,7 @@ export function PageCard({ page, onStop }: { page: PageState; onStop: () => void
       </dl>
       {page.lastToolbarAction ? (
         <div className="hint">
-          Last toolbar action: <span className="mono">{page.lastToolbarAction}</span>
+          Last toolbar action: <span className="mono">{page.lastToolbarAction.action}</span>
         </div>
       ) : null}
       {page.error ? (

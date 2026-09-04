@@ -4,6 +4,8 @@
  */
 export const PRODUCT_NAME = 'Thursday';
 export const PRODUCT_SLUG = 'thursday';
+/** Shown under the name on the page toolbar. */
+export const PRODUCT_CREDIT = 'By Omar';
 export const PRODUCT_TAGLINE = 'Audit any live website. No account, no server, no network.';
 
 /** Valid custom-element name, so attachShadow() is allowed on it. */

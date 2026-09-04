@@ -14,6 +14,21 @@ async function auditFrom(
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
+  /*
+   * Wait for the screenshot sweep before touching the page.
+   *
+   * An audit photographs its findings, which means scrolling the page for a
+   * few seconds and then putting it back. A test that scrolls during that gets
+   * its scroll undone by the restore -- which is exactly what happened here:
+   * the pin was correct and then the page went back to the top underneath it.
+   *
+   * Worth being clear that this is the product's behaviour, not a test
+   * workaround. Thursday moves the page for a moment after an audit, and
+   * anything that reads scroll position has to let it finish.
+   */
+  await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+    timeout: 60_000,
+  });
   return { page, panel };
 }
 
@@ -118,4 +133,35 @@ test('pins disappear when Thursday is switched off', async ({ openFixture, activ
   await panel.bringToFront();
   await panel.getByRole('button', { name: 'Stop' }).click();
   await expect(page.locator('thursday-root')).toHaveCount(0);
+});
+
+test('a pin keeps its severity colour under the pointer', async ({
+  openFixture,
+  activate,
+  extensionId,
+}) => {
+  /*
+   * A pin is a coloured disc with a white number on it, and the colour is the
+   * severity. It used to lose that colour on hover: the toolbar's generic
+   * button:hover rule is a type plus two pseudo-classes, which outranks the
+   * class-plus-attribute selector the fills were written with -- so the disc
+   * turned pale grey and the white ordinal on it became unreadable, exactly
+   * when somebody was about to click it.
+   *
+   * Found by looking at a screenshot with the pointer resting where it had
+   * just clicked, which is where a pointer usually is.
+   */
+  const { page } = await auditFrom(openFixture, activate, extensionId, 'accessibility.html');
+  await page.bringToFront();
+  const pin = pins(page).first();
+  await expect(pin).toBeVisible();
+
+  const before = await pin.evaluate((node) => getComputedStyle(node).backgroundColor);
+  await pin.hover();
+  const after = await pin.evaluate((node) => getComputedStyle(node).backgroundColor);
+
+  expect(after).toBe(before);
+  // And it is a real severity fill rather than a default or a hover grey.
+  expect(after).not.toBe('rgba(0, 0, 0, 0)');
+  expect(after).toMatch(/^rgb\(/);
 });

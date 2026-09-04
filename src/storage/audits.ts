@@ -1,7 +1,10 @@
 import type { Audit, AuditRecord, Finding, FindingStatus, PageSnapshotDigest } from '../shared/types';
+import { STORAGE_KEY_PREFIX } from '../shared/constants/product';
 import {
   database,
   requestAsPromise,
+  STORE_ANNOTATIONS,
+  STORE_ATTACHMENTS,
   STORE_AUDITS,
   STORE_BLOBS,
   STORE_FINDINGS,
@@ -100,19 +103,44 @@ export async function updateFinding(
   });
 }
 
+/**
+ * Deletes an audit and everything hanging off it.
+ *
+ * One transaction across all five stores, so "delete this audit" cannot leave
+ * orphaned comments or attachments behind. Orphans would be invisible in the
+ * panel and still counted in the storage figures on the options page, which is
+ * the worst of both: space the user cannot see and cannot reclaim.
+ */
 export async function deleteAudit(id: string): Promise<void> {
-  await transact([STORE_AUDITS, STORE_FINDINGS, STORE_BLOBS], 'readwrite', async (transaction) => {
-    transaction.objectStore(STORE_AUDITS).delete(id);
-    const findings = transaction.objectStore(STORE_FINDINGS);
-    const ids = await requestAsPromise(
-      findings.index('auditId').getAllKeys(id) as IDBRequest<IDBValidKey[]>,
-    );
-    const blobs = transaction.objectStore(STORE_BLOBS);
-    for (const findingId of ids) {
-      findings.delete(findingId);
-      blobs.delete(findingId);
-    }
-  });
+  await transact(
+    [STORE_AUDITS, STORE_FINDINGS, STORE_BLOBS, STORE_ANNOTATIONS, STORE_ATTACHMENTS],
+    'readwrite',
+    async (transaction) => {
+      transaction.objectStore(STORE_AUDITS).delete(id);
+      const findings = transaction.objectStore(STORE_FINDINGS);
+      const ids = await requestAsPromise(
+        findings.index('auditId').getAllKeys(id) as IDBRequest<IDBValidKey[]>,
+      );
+      const blobs = transaction.objectStore(STORE_BLOBS);
+      for (const findingId of ids) {
+        findings.delete(findingId);
+        blobs.delete(findingId);
+      }
+
+      const annotations = transaction.objectStore(STORE_ANNOTATIONS);
+      for (const annotationId of await requestAsPromise(
+        annotations.index('auditId').getAllKeys(id) as IDBRequest<IDBValidKey[]>,
+      )) {
+        annotations.delete(annotationId);
+      }
+      const attachments = transaction.objectStore(STORE_ATTACHMENTS);
+      for (const attachmentId of await requestAsPromise(
+        attachments.index('auditId').getAllKeys(id) as IDBRequest<IDBValidKey[]>,
+      )) {
+        attachments.delete(attachmentId);
+      }
+    },
+  );
 }
 
 /** Deletes every audit for one origin. Returns how many went. */
@@ -122,12 +150,38 @@ export async function deleteByOrigin(origin: string): Promise<number> {
   return summaries.length;
 }
 
+/**
+ * The key that says everything was cleared, and when.
+ *
+ * A clear can be asked for from the options page while the side panel is
+ * mid-sweep, photographing findings in another tab. The panel cannot see the
+ * clear -- it is a different document -- so it carried on writing pictures into
+ * the database the user had just emptied. Measured: two blobs back afterwards.
+ *
+ * chrome.storage is the one thing both documents can watch, so the clear
+ * announces itself here and anything writing stops when it sees this change.
+ */
+export const CLEARED_AT_KEY = `${STORAGE_KEY_PREFIX}clearedAt`;
+
 export async function clearAll(): Promise<void> {
-  await transact([STORE_AUDITS, STORE_FINDINGS, STORE_BLOBS], 'readwrite', (transaction) => {
-    transaction.objectStore(STORE_AUDITS).clear();
-    transaction.objectStore(STORE_FINDINGS).clear();
-    transaction.objectStore(STORE_BLOBS).clear();
-  });
+  await transact(
+    [STORE_AUDITS, STORE_FINDINGS, STORE_BLOBS, STORE_ANNOTATIONS, STORE_ATTACHMENTS],
+    'readwrite',
+    (transaction) => {
+      transaction.objectStore(STORE_AUDITS).clear();
+      transaction.objectStore(STORE_FINDINGS).clear();
+      transaction.objectStore(STORE_BLOBS).clear();
+      transaction.objectStore(STORE_ANNOTATIONS).clear();
+      transaction.objectStore(STORE_ATTACHMENTS).clear();
+    },
+  );
+  // Announced after the fact, so nobody stops writing on the strength of a
+  // clear that then failed.
+  try {
+    await chrome.storage.local.set({ [CLEARED_AT_KEY]: Date.now() });
+  } catch {
+    /* the database is empty either way; this only tells other documents */
+  }
 }
 
 export async function putScreenshot(auditId: string, findingId: string, blob: Blob): Promise<void> {
@@ -165,6 +219,10 @@ export type StorageUsage = {
   audits: number;
   findings: number;
   screenshots: number;
+  comments: number;
+  /** Images attached to comments. Counted separately from finding crops,
+   *  because the user chose to add these and can point at each one. */
+  attachments: number;
   /** Bytes, from the Storage API. Null when the browser will not say. */
   bytes: number | null;
   /** Distinct origins with stored audits, newest first. */
@@ -188,13 +246,15 @@ export async function usage(): Promise<StorageUsage> {
     byOrigin.set(summary.origin, entry);
   }
 
-  const [findings, screenshots] = await transact(
-    [STORE_FINDINGS, STORE_BLOBS],
+  const [findings, screenshots, comments, attachments] = await transact(
+    [STORE_FINDINGS, STORE_BLOBS, STORE_ANNOTATIONS, STORE_ATTACHMENTS],
     'readonly',
     async (transaction) =>
       Promise.all([
         requestAsPromise(transaction.objectStore(STORE_FINDINGS).count()),
         requestAsPromise(transaction.objectStore(STORE_BLOBS).count()),
+        requestAsPromise(transaction.objectStore(STORE_ANNOTATIONS).count()),
+        requestAsPromise(transaction.objectStore(STORE_ATTACHMENTS).count()),
       ]),
   );
 
@@ -210,6 +270,8 @@ export async function usage(): Promise<StorageUsage> {
     audits: summaries.length,
     findings,
     screenshots,
+    comments,
+    attachments,
     bytes,
     origins: [...byOrigin.values()].sort((a, b) => b.lastAudit - a.lastAudit),
   };

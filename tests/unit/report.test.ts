@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import type { Audit, Finding, PageSnapshotDigest } from '../../src/shared/types';
+import type { Annotation, Audit, Finding, PageSnapshotDigest } from '../../src/shared/types';
 import { renderReport, reportFileName } from '../../src/report/render';
 import { escapeHtml, safeImageSource, safeLink } from '../../src/report/escape';
 
@@ -235,5 +235,139 @@ describe('escaping helpers', () => {
     expect(safeLink('data:text/html,<script>x</script>')).toBeNull();
     expect(safeLink('file:///etc/passwd')).toBeNull();
     expect(safeLink('not a url')).toBeNull();
+  });
+});
+
+// -- comments --------------------------------------------------------------
+
+const PIXEL =
+  'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8DwHwAFAAH/q842iQAAAABJRU5ErkJggg==';
+
+const comment = (overrides: Partial<Annotation> = {}): Annotation => ({
+  id: 'c1',
+  auditId: 'audit-1',
+  body: 'The middle plan is the one to buy and nothing says so.',
+  attachments: [],
+  createdAt: audit.createdAt,
+  updatedAt: audit.createdAt,
+  ...overrides,
+});
+
+describe('comments in the report', () => {
+  it('does not mention comments at all when there are none', () => {
+    // The stylesheet always carries the comment rules; the section must not.
+    expect(render([finding()])).not.toContain('<h2>Comments');
+  });
+
+  it('puts comments in their own section, labelled as opinions', () => {
+    const html = render([finding()], { annotations: [comment()] });
+    expect(html).toContain('<h2>Comments — 1</h2>');
+    expect(html).toContain('observations and opinions, not measurements');
+    // After the findings, so nobody reads a note as a measured result.
+    expect(html.indexOf('Image has no alternative text')).toBeLessThan(html.indexOf('<h2>Comments'));
+  });
+
+  it('letters comments and counts them in the totals', () => {
+    const html = render([], { annotations: [comment(), comment({ id: 'c2' })] });
+    expect(html).toContain('<li data-kind="comment">2 comments</li>');
+    expect(html).toContain('<h3>Comment A</h3>');
+    expect(html).toContain('<h3>Comment B</h3>');
+  });
+
+  it('says a comment has no anchor rather than inventing one', () => {
+    expect(render([], { annotations: [comment()] })).toContain(
+      'No element anchor: this comment is about the page as a whole.',
+    );
+  });
+
+  it('gives an anchored comment the element a developer can find', () => {
+    const html = render([], {
+      annotations: [
+        comment({
+          elementRef: {
+            tagName: 'section',
+            structuralPath: 'main>section:nth-of-type(2)',
+            ancestry: ['main'],
+            rect: { x: 0, y: 0, width: 100, height: 100 },
+            centroid: { x: 50, y: 50 },
+            accessibleName: 'Plans',
+          },
+        }),
+      ],
+    });
+    expect(html).toContain('&lt;section&gt;');
+    expect(html).toContain('main&gt;section:nth-of-type(2)');
+  });
+
+  it('keeps the line breaks the user typed', () => {
+    // Collapsing their paragraphs would lose something they put there.
+    const html = render([], { annotations: [comment({ body: 'one\n\ntwo\nthree' })] });
+    expect(html).toContain('<p class="body">one</p><p class="body">two<br>three</p>');
+  });
+
+  it('escapes a comment body before breaking it into paragraphs', () => {
+    // The other order would let an injected tag survive the split.
+    const html = render([], { annotations: [comment({ body: '<img src=x onerror=alert(1)>\n<b>' })] });
+    expect(html).not.toContain('<img src=x');
+    expect(html).toContain('&lt;img src=x onerror=alert(1)&gt;<br>&lt;b&gt;');
+  });
+
+  it('shows an attached image with the user caption as its alt text', () => {
+    const html = render([], {
+      annotations: [
+        comment({
+          attachments: [
+            {
+              id: 'att-1',
+              annotationId: 'c1',
+              auditId: 'audit-1',
+              mime: 'image/png',
+              bytes: 68,
+              width: 1,
+              height: 1,
+              caption: 'The three plan columns',
+              source: 'file',
+              createdAt: audit.createdAt,
+            },
+          ],
+        }),
+      ],
+      attachments: { 'att-1': PIXEL },
+    });
+    expect(html).toContain(`src="${PIXEL}"`);
+    expect(html).toContain('alt="The three plan columns"');
+    expect(html).toContain('<figcaption>The three plan columns</figcaption>');
+  });
+
+  it('refuses an image source that is not an inline image', () => {
+    // Otherwise a crafted audit file turns an offline report into a tracker.
+    const html = render([], {
+      annotations: [
+        comment({
+          attachments: [
+            {
+              id: 'att-1',
+              annotationId: 'c1',
+              auditId: 'audit-1',
+              mime: 'image/png',
+              bytes: 1,
+              width: 1,
+              height: 1,
+              source: 'file',
+              createdAt: audit.createdAt,
+            },
+          ],
+        }),
+      ],
+      attachments: { 'att-1': 'https://tracker.example/pixel.png' },
+    });
+    expect(html).not.toContain('tracker.example');
+    expect(html).not.toContain('<img');
+  });
+
+  it('is still a report when the audit found nothing but the user had plenty to say', () => {
+    const html = render([], { annotations: [comment()] });
+    expect(html).toContain('No findings were included in this report.');
+    expect(html).toContain('The middle plan is the one to buy');
   });
 });

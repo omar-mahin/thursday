@@ -46,9 +46,17 @@ Thursday
 > what is still open and what is new — and anything you dismissed stays
 > dismissed.
 >
-> Keep audits as files: a .thursday.json reopens with every finding, status and
-> note intact, or export a single self-contained HTML report that opens offline
-> in any browser and prints to PDF for people who do not have Thursday.
+> Add your own comments too. Click any element and write what you think, attach
+> screenshots to it, or leave a note about the page as a whole. Comments are
+> kept separate from findings everywhere they appear — lettered rather than
+> numbered, in their own section of the report, labelled as opinions — because
+> what you think and what was measured are different kinds of claim and should
+> never be mistaken for each other.
+>
+> Keep audits as files: a .thursday.json reopens with every finding, comment,
+> status, note and image intact; a single self-contained HTML report that opens
+> offline in any browser; or a PDF for the ticket, the print-out and anyone who
+> will not open an HTML attachment.
 >
 > WHAT IT DOES NOT DO
 >
@@ -59,8 +67,10 @@ Thursday
 >
 > It never reads what you type. Password, payment and similar fields are left
 > out of everything it collects, and there is no code path in the extension that
-> can read a form value. Screenshots are off until you turn them on, and a crop
-> of a sensitive field is refused even then.
+> can read a form value. Audits do photograph their findings, and every password
+> or payment field on screen is painted out of every picture -- including
+> pictures taken for something else beside it. You can turn photographs off
+> entirely.
 >
 > It also does not guess. If a colour sits on a background image, Thursday says
 > the contrast could not be verified instead of inventing a number. If a page is
@@ -96,7 +106,7 @@ feature cannot work without it.
 
 | Permission | Justification |
 |---|---|
-| `activeTab` | Thursday reads the page the user explicitly activates it on. This is requested instead of host permissions so the extension has no standing access to any site: access is granted by the user's own click or keyboard shortcut, for that one tab, and nothing runs on any page until then. Also authorises the screenshot crop of the visible tab, which the user asks for per finding. |
+| `activeTab` | Thursday reads the page the user explicitly activates it on. This is requested instead of host permissions so the extension has no standing access to any site: access is granted by the user's own click or keyboard shortcut, for that one tab, and nothing runs on any page until then. Also authorises photographing the visible tab, which is how each finding gets a picture of where it is. |
 | `scripting` | Injects the on-page toolbar, the element highlighter and the finding pins at the moment the user activates Thursday. There is no declared content script, so nothing is injected in advance. |
 | `sidePanel` | The audit panel is a side panel, so findings sit beside the page being audited rather than covering it. |
 | `storage` | Remembers the user's settings, and stores audits on the user's own machine so they survive closing the browser. Nothing stored is ever transmitted. |
@@ -124,7 +134,7 @@ are these:
 | Location | No | |
 | Web history | No | Audits record the URL of pages the user chose to audit, on the user's own machine only, and can be deleted from settings. Nothing is transmitted. |
 | User activity | No | |
-| Website content | No | Page structure and measurements are read into memory to produce an audit, and stored locally only if the user keeps history. None of it leaves the machine. |
+| Website content | No | Page structure and measurements are read into memory to produce an audit, and stored locally only if the user keeps history. Pictures of findings and images the user attaches to their own comments are stored locally too. Sensitive fields are painted out of every picture before it is stored. None of it leaves the machine. |
 
 ### Required certifications
 
@@ -184,9 +194,9 @@ Not in the repository; produced at submission time.
 
 - 1280×800 or 640×400, at least one, at most five.
 - Suggested set: the panel with findings and pins on a real page; an open
-  finding showing evidence, impact and recommendation; the comparison after a
-  re-audit; an exported HTML report; the settings page showing the privacy
-  section.
+  finding showing evidence, impact and recommendation; a comment with an
+  attached screenshot beside its pin; the comparison after a re-audit; an
+  exported report (HTML or the PDF).
 - 128×128 store icon (`public/icons/icon128.png` is the extension icon and can
   be reused).
 - Screenshots must be of real audits of real pages. A mocked-up finding on a

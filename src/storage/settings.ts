@@ -18,11 +18,21 @@ export type Settings = {
    */
   keepHistory: boolean;
   /**
-   * Whether the panel may crop screenshots of findings.
+   * Whether an audit photographs its findings.
    *
-   * Off by default, and deliberately so: a crop is a picture of the page, which
-   * is the one kind of evidence that can contain something Thursday otherwise
-   * never reads. Sensitive fields are refused even when this is on.
+   * On by default as of 1.0.1, which reverses an earlier decision, so the
+   * reasoning belongs here rather than in a commit message.
+   *
+   * It was off because a picture of the page is the one kind of evidence that
+   * can contain something Thursday otherwise never reads. That risk is real and
+   * has not gone away -- what changed is that it is now handled rather than
+   * avoided: every sensitive field on screen is painted out of every picture
+   * before it is encoded, not merely the one being photographed.
+   *
+   * And off-by-default had its own cost, which turned out to be the larger one.
+   * A report of thirty findings with no pictures does not say where any of them
+   * are, and nobody found the setting that would have fixed it. A feature
+   * nobody finds is not a safe default; it is a broken one.
    */
   captureScreenshots: boolean;
 };
@@ -32,7 +42,7 @@ export const DEFAULT_SETTINGS: Settings = {
   theme: 'system',
   minTouchTarget: 44,
   keepHistory: true,
-  captureScreenshots: false,
+  captureScreenshots: true,
 };
 
 const key = <K extends keyof Settings>(name: K): string => `${STORAGE_KEY_PREFIX}${name}`;

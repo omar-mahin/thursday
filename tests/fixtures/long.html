@@ -1,0 +1,73 @@
+<!doctype html>
+<!--
+  A page taller than several screenfuls, with one planted defect per section.
+
+  Exists for the screenshot sweep. A single tab capture only ever sees one
+  screenful, so the interesting case is a finding two thousand pixels down --
+  and on a real site that is where most findings are. accessibility.html packs
+  its defects into one screen, which is exactly the case that would pass
+  whether the sweep worked or not.
+
+  Deliberately small: five sections, not five hundred. Each screenful costs a
+  capture and Chrome allows two a second, so a fixture the size of heavy.html
+  would turn one assertion into a minute of waiting.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Long fixture</title>
+    <style>
+      body { margin: 0; font-family: system-ui, sans-serif; font-size: 16px; background: #fff; }
+      section {
+        /* Taller than any viewport the tests use, so each one is its own band. */
+        min-height: 1100px;
+        padding: 40px;
+        border-bottom: 1px solid #ddd;
+      }
+      /* Distinct backgrounds, so a crop from the wrong section is visibly the
+         wrong section rather than another patch of white. */
+      #s1 { background: #ffffff; }
+      #s2 { background: #f2f6ff; }
+      #s3 { background: #fff6f2; }
+      #s4 { background: #f4fff2; }
+      #s5 { background: #faf2ff; }
+      .faint { color: #a0a0a0; }
+      .tiny { width: 18px; height: 18px; padding: 0; font-size: 11px; }
+      input { min-height: 32px; width: 260px; font-size: 16px; }
+    </style>
+  </head>
+  <body>
+    <section id="s1">
+      <h1>Long fixture</h1>
+      <p>The first screenful. Everything below this needs the page to scroll.</p>
+      <!-- A11Y-003: 2.8:1 on white -->
+      <p class="faint">This first paragraph does not have enough contrast.</p>
+    </section>
+
+    <section id="s2">
+      <h2>Second section</h2>
+      <!-- A11Y-001: no alt attribute, large -->
+      <img src="data:image/gif;base64,R0lGODlhAQABAIAAAP///wAAACwAAAAAAQABAAACAkQBADs=" width="240" height="180" />
+    </section>
+
+    <section id="s3">
+      <h2>Third section</h2>
+      <form>
+        <!-- A11Y-002: no label -->
+        <input type="text" name="fullname" />
+      </form>
+    </section>
+
+    <section id="s4">
+      <h2>Fourth section</h2>
+      <!-- A11Y-004: below the 24px floor -->
+      <button type="button" class="tiny">×</button>
+    </section>
+
+    <section id="s5">
+      <h2>Fifth section</h2>
+      <!-- A11Y-007: empty button -->
+      <button type="button" style="width: 32px; height: 32px"></button>
+    </section>
+  </body>
+</html>

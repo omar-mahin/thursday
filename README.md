@@ -16,8 +16,8 @@ permission. See [LICENSE](LICENSE).
 
 ## Status
 
-**All six sprints are complete.** Thursday audits pages, marks them up, keeps the results, tells
-you what changed, and passes its own rules.
+**All six sprints are complete, plus comments and PDF export.** Thursday audits pages, marks them
+up, lets you write on them, keeps the results, tells you what changed, and passes its own rules.
 
 - **Sprint 1** — extension foundation: on-demand injection, shadow-DOM toolbar, typed messaging, four privacy guards.
 - **Sprint 2** — inspection: click any element and read its measured facts (box, type, color, accessibility, reference), plus the page snapshot pipeline behind it.
@@ -25,8 +25,9 @@ you what changed, and passes its own rules.
 - **Sprint 4** — the findings UI: numbered pins on the page, grouped and filterable findings, the detail card, statuses, notes and report membership.
 - **Sprint 5** — persistence and files: audits survive a restart, save and reopen as `.thursday.json`, export as a self-contained HTML report, and re-audit to see what was fixed.
 - **Sprint 6** — hardening and ship: both end-to-end flows tested, performance budgets, packaging, and Thursday audited by Thursday.
+- **Sprint 7** — comments and PDF: write your own notes on any element, attach images to them, and export the whole audit as a PDF written from scratch with no dependencies.
 
-**402 unit tests and 102 Playwright tests.** [STORE_LISTING.md](STORE_LISTING.md) holds the
+**482 unit tests and 120 Playwright tests.** [STORE_LISTING.md](STORE_LISTING.md) holds the
 submission copy, the permission justifications and the data disclosures.
 
 ## Keeping an audit
@@ -36,24 +37,66 @@ Reopening says so on screen, because findings from last week are not a measureme
 front of you — and its pins are drawn dashed when their position had to be found by searching the
 live page rather than measured.
 
-Two file formats, for two readers:
+Three file formats, for three readers:
 
-- **`.thursday.json`** is Thursday's own. It reopens with every finding, status and note intact, and
-  re-pins a live page. A file from a newer version is refused rather than half-read.
+- **`.thursday.json`** is Thursday's own. It reopens with every finding, comment, status and note
+  intact, images included, and re-pins a live page. A file from a newer version is refused rather
+  than half-read.
 - **An HTML report** is for everyone who does not have Thursday. One file, no scripts, nothing
-  loaded from the network: it opens offline in any browser and prints cleanly to PDF.
+  loaded from the network: it opens offline in any browser and prints cleanly.
+- **A PDF** is for the ticket, the print-out and the client who will not open an HTML attachment.
+
+The HTML report is the lossless one. The PDF uses the three fonts every reader is required to
+have, so nothing is embedded and the file stays small — but those fonts cover Latin-1 and no more.
+Text outside it cannot be drawn, so the PDF counts what it had to replace and says so on its last
+page rather than leaving you to wonder whether the question marks were the website's fault.
 
 **Re-audit and compare.** Run it, fix things, run it again: Thursday pairs the two audits up and
 tells you what is fixed, what is still open and what is new. Anything you dismissed stays
 dismissed, because triage belongs to you and not to the run.
 
-**Screenshots are off by default.** You can attach a cropped screenshot to a finding once you turn
-them on in settings. A crop is the only evidence Thursday stores that can contain something it
-otherwise never reads, so it is the one feature you have to ask for — and a crop of anything that
-is or contains a password or payment field is refused even then.
+**Every finding comes with a picture of itself.** An audit sweeps the page and photographs each
+finding twice over in one image: a crop of the problem with the element outlined, and a thumbnail of
+the whole screenful with the same element marked and a track showing where on the page that
+screenful sits. Findings below the fold are included — Thursday scrolls to reach them, one capture
+per screenful rather than one per finding, and puts the page back where you left it.
 
-Settings has the other end of this: how much is stored, deletion per site, delete everything, and a
-switch to keep no history at all.
+This was off by default until 1.0.1 and it should not have been. A crop is the only evidence
+Thursday stores that can contain something it otherwise never reads, which is a real risk — but the
+answer is to handle it rather than to hide the feature behind a setting nobody finds. **Every
+sensitive field on screen is painted out of every picture**, not merely the one being photographed:
+a crop taken for a button can contain the password box next to it, and that is covered too. An
+element that is or contains a password or payment field is not photographed at all. You can still
+turn the whole thing off in settings, and off means no pictures anywhere.
+
+## Comments
+
+Findings are what Thursday measured. Comments are what **you** noticed — and the two are kept
+apart everywhere, on purpose. A comment has no severity and no confidence, sits in its own section
+of the report, and is labelled as an opinion, because the moment somebody's judgement inherits the
+authority of a contrast ratio the whole tool is worth less.
+
+Press **Comment on an element**, click the thing you mean, and write. Or write without picking
+anything: "the checkout asks for the email twice" is about the flow, not about one button, and
+Thursday will not make you pin it to an arbitrary element.
+
+Comments are lettered — A, B, C — where findings are numbered, so a marker on the page can never be
+mistaken for the other kind. They pin, they persist, they travel in the audit file, and they appear
+in both the HTML report and the PDF.
+
+**They survive a re-audit**, because a comment is about the page and not about one run over it — you
+should be able to write a review, re-run the audit to check a fix, and still have the review. Their
+pins are then drawn dashed: the element index they were written with belongs to a capture that is
+gone, so the position has to be found by searching the live page.
+
+**Images attach to comments.** Choose files or paste a screenshot straight into the box. Every
+image is decoded, scaled to at most 1600px on the long edge and re-encoded before anything is
+written to disk — the original file is never kept, because a 5000px retina PNG is normal and six of
+them is not a reasonable thing to leave in a browser database. Captions become the alt text.
+
+Settings has the other end of this: how much is stored — audits, findings, screenshots, comments
+and attached images, each counted separately — deletion per site, delete everything, and a switch
+to keep no history at all.
 
 ## The rules
 
@@ -101,6 +144,12 @@ Nothing is injected until you ask, so the toolbar does not survive a reload — 
 asking for no host permissions, and it is deliberate. The keyboard shortcut makes restarting one
 keystroke.
 
+The page toolbar is icons rather than words, with the label shown on hover **and on keyboard
+focus** — the second one is why it is a styled tooltip and not a `title` attribute, which appears
+after a second, cannot be styled, and never appears at all for somebody arriving by keyboard. Every
+button is a 30px target with a permanent accessible name, so what a screen reader announces never
+depends on where the pointer is.
+
 To build the store upload: `npm run package` writes `release/thursday-<version>.zip`.
 
 ## Scripts
@@ -127,7 +176,7 @@ Five checks turn the promises in PLAN.md section 1 into properties:
 1. **No network APIs in `src/`** — `npm run guard` fails on `fetch`, `XMLHttpRequest`, `WebSocket`, `EventSource`, `sendBeacon`, `importScripts`.
 2. **No form-value reads in `src/content/`** — the content script has no code path that can read what you typed.
 3. **Manifest shape** — `tests/unit/manifest.test.ts` asserts exactly four permissions, no host permissions, no content scripts, no web-accessible resources, no external connectability.
-4. **Zero requests at runtime** — `tests/e2e/network.spec.ts` exercises the whole extension in real Chromium — including storing an audit, writing both file formats, reading one back and comparing two audits — and asserts the browser made no request outside the local fixture and the extension's own pages.
+4. **Zero requests at runtime** — `tests/e2e/network.spec.ts` exercises the whole extension in real Chromium — including storing an audit, writing all three file formats, reading one back with its comments and images, and comparing two audits — and asserts the browser made no request outside the local fixture, the extension's own pages, and object URLs on the extension's own origin (a `blob:` handle to memory in the panel, which is how an attached image is displayed).
 5. **Nothing in the shipped bytes** — `npm run size` fails if any of those identifiers appears in the built bundle, dependencies included. Guards 1–3 are about our source; a dependency could have brought a network call with it. None does.
 
 Widening any of these has to break a test.
@@ -148,6 +197,7 @@ src/background/        service worker: router only, holds no state
 src/content/           injected on demand: shadow host, toolbar, selection, snapshot
 src/audit/             rules, engine, measurement, element identity, audit comparison
 src/report/            the self-contained HTML report
+src/pdf/               the PDF writer: container, font metrics, layout, report
 src/sidepanel/         React audit UI, owns audit state
 src/popup/             activation entry point (the only place that can grant activeTab)
 src/options/           settings and data management

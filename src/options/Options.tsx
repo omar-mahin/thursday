@@ -177,17 +177,18 @@ export function Options(): React.ReactElement {
         </div>
         <div className="field">
           <div>
-            <div className="field-label">Allow screenshot crops</div>
+            <div className="field-label">Photograph findings</div>
             <div className="hint">
-              Lets you attach a cropped screenshot to a finding. Off by default: a picture of the page is
-              the one kind of evidence that can contain something {PRODUCT_NAME} otherwise never reads.
-              Password and payment fields are refused even when this is on.
+              Every audit takes a picture of each finding: a crop of the problem, and a thumbnail showing
+              where on the page it sits. {PRODUCT_NAME} scrolls the page to reach findings below the fold
+              and puts it back afterwards. Password and payment fields are painted out of every picture,
+              including pictures taken for something else nearby.
             </div>
           </div>
           <label className="switch">
             <input
               type="checkbox"
-              aria-label="Allow screenshot crops"
+              aria-label="Photograph findings"
               checked={settings.captureScreenshots}
               onChange={(event) => update('captureScreenshots', event.currentTarget.checked)}
             />
@@ -201,13 +202,7 @@ export function Options(): React.ReactElement {
           </p>
         ) : (
           <p className="hint" style={{ margin: '10px 0 0' }}>
-            {stored
-              ? `${stored.audits} audit${stored.audits === 1 ? '' : 's'}, ${stored.findings} finding${
-                  stored.findings === 1 ? '' : 's'
-                }, ${stored.screenshots} screenshot${stored.screenshots === 1 ? '' : 's'}${
-                  stored.bytes === null ? '' : ` — about ${formatBytes(stored.bytes)} of browser storage`
-                }.`
-              : 'Reading local storage…'}
+            {stored ? describeStorage(stored) : 'Reading local storage…'}
           </p>
         )}
 
@@ -265,4 +260,24 @@ export function Options(): React.ReactElement {
 
     </div>
   );
+}
+
+/**
+ * What is on disk, in a sentence.
+ *
+ * Every kind is named separately -- comments and the images inside them are
+ * the user's own contributions and the things they are most likely to want
+ * accounted for, so folding them into "3 screenshots" would hide exactly the
+ * rows somebody came here to look for. Zero counts are left out rather than
+ * printed, so the line stays readable on a fresh install.
+ */
+function describeStorage(stored: StorageUsage): string {
+  const plural = (count: number, noun: string, plural = `${noun}s`): string =>
+    `${count} ${count === 1 ? noun : plural}`;
+  const parts = [plural(stored.audits, 'audit'), plural(stored.findings, 'finding')];
+  if (stored.screenshots > 0) parts.push(plural(stored.screenshots, 'screenshot'));
+  if (stored.comments > 0) parts.push(plural(stored.comments, 'comment'));
+  if (stored.attachments > 0) parts.push(plural(stored.attachments, 'attached image'));
+  const size = stored.bytes === null ? '' : ` — about ${formatBytes(stored.bytes)} of browser storage`;
+  return `${parts.join(', ')}${size}.`;
 }

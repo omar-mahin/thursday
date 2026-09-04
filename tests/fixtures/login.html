@@ -19,10 +19,14 @@
         <input id="card" name="cardNumber" autocomplete="cc-number" value="4111111111111111" />
 
         <label for="cvv">CVV</label>
-        <input id="cvv" name="cvv" value="737" />
+        <!-- Values are sentinels, not realistic ones: redaction keys on the
+             field's name, type and autocomplete, never on what is in it, so the
+             content is free to be something a leak test can recognise with
+             certainty. See snapshot.spec.ts. -->
+        <input id="cvv" name="cvv" value="cvv-sentinel-QK47XZ" />
 
         <label for="otp">One-time code</label>
-        <input id="otp" autocomplete="one-time-code" value="123456" />
+        <input id="otp" autocomplete="one-time-code" value="otp-sentinel-PM91TR" />
 
         <input type="hidden" name="csrf" value="csrf-token-abcdef123456" />
 

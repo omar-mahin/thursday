@@ -1,7 +1,13 @@
 # Toolbar icons
 
-The seven drawings behind the page toolbar's buttons, one SVG per action.
+The drawings behind the page toolbar's buttons, one SVG per action.
 `cancel.svg` is the `close` action; the rest are named after theirs.
+
+`report.svg` is here but unused: the toolbar's Report button was removed
+because the side panel already has Save report and Save PDF. It is kept in case
+that changes, and named in `tests/unit/toolbar-icons.test.ts` so that an unused
+drawing is on the record rather than one somebody forgot to wire up -- the same
+test fails if a new SVG is added and never used.
 
 **These files are not shipped.** They deliberately do not live in `public/`,
 which Vite copies into `dist/` wholesale -- an extension package should contain

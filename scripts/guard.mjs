@@ -43,6 +43,31 @@ function walk(dir) {
 
 const violations = [];
 
+/**
+ * A backtick inside a CSS template literal.
+ *
+ * The stylesheets are written as tagged-free template literals, and their
+ * comments are prose -- so referring to `background` the way prose does ends
+ * the literal and turns the rest of the file into a syntax error. TypeScript
+ * does report it, but only as "expected a semicolon" pointing at a sentence,
+ * and a suppressed build then leaves a half-written dist behind that looks
+ * like a broken environment rather than a typo. This says what it actually is.
+ *
+ * It has cost an afternoon twice. Ten lines is cheaper.
+ */
+const CSS_LITERAL = /export const (\w*CSS) = `([\s\S]*?)`;/g;
+
+for (const file of walk('src')) {
+  const source = readFileSync(file, 'utf8');
+  for (const match of source.matchAll(CSS_LITERAL)) {
+    if (!match[2].includes('`')) continue;
+    const line = source.slice(0, match.index + match[2].indexOf('`')).split('\n').length;
+    violations.push(
+      `${file}:${line}  backtick inside the ${match[1]} template literal -- it ends the string; write the word plainly instead`,
+    );
+  }
+}
+
 for (const file of walk('src')) {
   const lines = readFileSync(file, 'utf8').split('\n');
   const inContent = relative('src', file).startsWith('content');
@@ -66,4 +91,6 @@ if (violations.length > 0) {
   process.exit(1);
 }
 
-console.log('guard: no network APIs in src/, no form-value reads in src/content/');
+console.log(
+  'guard: no network APIs in src/, no form-value reads in src/content/, no backticks inside CSS literals',
+);

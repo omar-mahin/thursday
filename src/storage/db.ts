@@ -12,8 +12,10 @@ import { DB_NAME } from '../shared/constants/product';
 export const STORE_AUDITS = 'audits';
 export const STORE_FINDINGS = 'findings';
 export const STORE_BLOBS = 'blobs';
+export const STORE_ANNOTATIONS = 'annotations';
+export const STORE_ATTACHMENTS = 'attachments';
 
-export const DB_VERSION = 1;
+export const DB_VERSION = 2;
 
 export type Migration = {
   /** The version this migration produces. */
@@ -38,6 +40,27 @@ export const MIGRATIONS: readonly Migration[] = [
       // Screenshot crops, keyed by the finding they belong to. Separate store
       // so listing history never has to page Blobs into memory.
       db.createObjectStore(STORE_BLOBS, { keyPath: 'findingId' });
+    },
+  },
+  {
+    to: 2,
+    describe: 'create the annotations and attachments stores',
+    run(db) {
+      // Comments the user wrote, not findings Thursday measured. A separate
+      // store rather than a flag on findings: the two are read at different
+      // times, have different shapes, and must never be sorted into one list
+      // by accident.
+      const annotations = db.createObjectStore(STORE_ANNOTATIONS, { keyPath: 'id' });
+      annotations.createIndex('auditId', 'auditId');
+      annotations.createIndex('createdAt', 'createdAt');
+
+      // Images attached to comments. Many per comment, so this cannot reuse
+      // the crops store, whose key is one blob per finding. Indexed both ways
+      // because deleting an audit has to sweep every attachment under it
+      // without loading a single image into memory.
+      const attachments = db.createObjectStore(STORE_ATTACHMENTS, { keyPath: 'id' });
+      attachments.createIndex('annotationId', 'annotationId');
+      attachments.createIndex('auditId', 'auditId');
     },
   },
 ];

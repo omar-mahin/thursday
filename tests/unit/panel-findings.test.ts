@@ -226,7 +226,7 @@ describe('pins', () => {
     expect(pins.map((pin) => pin.ordinal)).toEqual([1, 2]);
     expect(pins[0]?.elementIndex).toBe(1);
     expect(pins[0]?.documentRect).toEqual({ x: 20, y: 100, width: 200, height: 150 });
-    expect(ordinals(pins).get(pins[1]!.findingId)).toBe(2);
+    expect(ordinals(pins).get(pins[1]!.targetId)).toBe(2);
   });
 
   it('stamps every pin with the snapshot its index belongs to', () => {

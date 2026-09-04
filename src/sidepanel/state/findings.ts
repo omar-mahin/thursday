@@ -1,4 +1,5 @@
 import type {
+  Annotation,
   Finding,
   FindingStatus,
   PageSnapshotDigest,
@@ -185,7 +186,8 @@ export function pinsFor(views: readonly FindingView[], digest: PageSnapshotDiges
     if (finding.elementIndex === undefined || !finding.elementRef) continue;
     const location = locations.get(finding.elementIndex);
     pins.push({
-      findingId: finding.id,
+      targetId: finding.id,
+      kind: 'finding',
       snapshotId: digest.snapshotId,
       ordinal: pins.length + 1,
       severity: finding.severity,
@@ -206,7 +208,64 @@ export function pinsFor(views: readonly FindingView[], digest: PageSnapshotDiges
   return pins;
 }
 
-/** Ordinal shown next to a finding in the list, matching its pin. */
+/**
+ * The pins for the user's comments, numbered in their own series.
+ *
+ * A separate series, and a separate function, because the two must not share
+ * numbering: "3" meaning the third finding on one pin and the third comment on
+ * another is the sort of ambiguity that only shows up when somebody is reading
+ * the report out loud on a call.
+ *
+ * A comment with no element anchor gets no pin. That is not a gap: it is a
+ * comment about the page, and putting it somewhere arbitrary would claim a
+ * location the user never chose.
+ */
+export function commentPins(
+  annotations: readonly Annotation[],
+  digest: PageSnapshotDigest | null,
+): Pin[] {
+  if (!digest) return [];
+  const pins: Pin[] = [];
+  for (let index = 0; index < annotations.length; index += 1) {
+    const annotation = annotations[index];
+    const reference = annotation?.elementRef;
+    if (!annotation || !reference) continue;
+    /*
+     * The measured index is offered only when this comment demonstrably came
+     * from the snapshot being drawn against. -1 is never a valid array index,
+     * so anything else falls to the resolution ladder and is drawn as
+     * approximate -- which is the honest answer for a comment out of a file,
+     * or one written against a different run of the audit.
+     */
+    const sameSnapshot = annotation.snapshotId !== undefined && annotation.snapshotId === digest.snapshotId;
+    pins.push({
+      targetId: annotation.id,
+      kind: 'comment',
+      snapshotId: digest.snapshotId,
+      // Numbered by position in the whole comment list, not among the pinned
+      // ones. An unanchored comment still takes its letter, so the marker in
+      // the panel, on the pin and in the report is always the same letter.
+      ordinal: index + 1,
+      elementIndex: sameSnapshot && annotation.elementIndex !== undefined ? annotation.elementIndex : -1,
+      documentRect:
+        annotation.documentRect ?? {
+          x: reference.rect.x + digest.viewport.scrollX,
+          y: reference.rect.y + digest.viewport.scrollY,
+          width: reference.rect.width,
+          height: reference.rect.height,
+        },
+      ref: reference,
+    });
+  }
+  return pins;
+}
+
+/**
+ * Ordinal shown next to a finding or comment in the list, matching its pin.
+ *
+ * Keyed by target id, so one map can be built per series without the two
+ * colliding -- which they would if the key were the ordinal.
+ */
 export function ordinals(pins: readonly Pin[]): Map<string, number> {
-  return new Map(pins.map((pin) => [pin.findingId, pin.ordinal]));
+  return new Map(pins.map((pin) => [pin.targetId, pin.ordinal]));
 }

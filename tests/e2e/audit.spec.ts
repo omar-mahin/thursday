@@ -3,7 +3,7 @@ import type { AuditOptions, PageSnapshot } from '../../src/shared/types';
 import { runAudit } from '../../src/audit/engine/run';
 import { ALL_CATEGORIES } from '../../src/audit/engine/registry';
 import { DEFAULT_AUDIT_SETTINGS } from '../../src/audit/types';
-import { exchange, expect, testWithHostAccess as test } from './fixtures';
+import { exchange, expect, LOGIN_SECRETS, testWithHostAccess as test } from './fixtures';
 
 /**
  * The strongest test in the suite: real snapshots, captured from real Chromium
@@ -197,7 +197,7 @@ test('a login page audit leaks no field values into findings', async ({
   // way through the engine, not just in the snapshot.
   const { result } = await auditFixture(openFixture, activate, extensionId, 'login.html');
   const serialized = JSON.stringify(result);
-  for (const secret of ['hunter2-secret', '4111111111111111', 'csrf-token-abcdef123456', 'ada@example.com']) {
+  for (const secret of LOGIN_SECRETS) {
     expect(serialized, `leaked ${secret}`).not.toContain(secret);
   }
   expect(result.findings.length).toBeGreaterThan(0);

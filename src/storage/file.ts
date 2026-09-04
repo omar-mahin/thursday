@@ -5,6 +5,8 @@ import {
   PRODUCT_SLUG,
 } from '../shared/constants/product';
 import type {
+  Annotation,
+  AnnotationAttachment,
   Audit,
   AuditCategory,
   ElementLocation,
@@ -19,7 +21,15 @@ import type {
   Viewport,
 } from '../shared/types';
 
-export const FILE_VERSION = 1;
+/**
+ * The on-disk format.
+ *
+ * v2 adds comments and their attached images. A v1 file still opens: every
+ * field it lacks has an honest default, and a file with no comments is
+ * indistinguishable from one written before comments existed. The reverse is
+ * refused, loudly -- see `parseAuditFile`.
+ */
+export const FILE_VERSION = 2;
 
 export type ThursdayAuditFile = {
   format: typeof AUDIT_FILE_FORMAT;
@@ -32,6 +42,10 @@ export type ThursdayAuditFile = {
   digest: PageSnapshotDigest;
   /** findingId -> data URL. Present only if the user captured crops. */
   screenshots?: Record<string, string>;
+  /** The user's own comments. Absent when they wrote none. */
+  annotations?: Annotation[];
+  /** attachmentId -> data URL, for the images inside those comments. */
+  attachments?: Record<string, string>;
 };
 
 export function buildAuditFile(input: {
@@ -40,6 +54,8 @@ export function buildAuditFile(input: {
   digest: PageSnapshotDigest;
   productVersion: string;
   screenshots?: Record<string, string>;
+  annotations?: readonly Annotation[];
+  attachments?: Record<string, string>;
 }): ThursdayAuditFile {
   const file: ThursdayAuditFile = {
     format: AUDIT_FILE_FORMAT,
@@ -57,6 +73,12 @@ export function buildAuditFile(input: {
   };
   if (input.screenshots && Object.keys(input.screenshots).length > 0) {
     file.screenshots = input.screenshots;
+  }
+  if (input.annotations && input.annotations.length > 0) {
+    file.annotations = [...input.annotations];
+    if (input.attachments && Object.keys(input.attachments).length > 0) {
+      file.attachments = input.attachments;
+    }
   }
   return file;
 }
@@ -103,6 +125,10 @@ const MAX_FINDINGS = 500;
 const MAX_SCREENSHOTS = 200;
 /** A crop, not a photo album. 4MB of base64 per finding is already generous. */
 const MAX_SCREENSHOT_CHARS = 4_000_000;
+const MAX_ANNOTATIONS = 200;
+/** Enough for a paragraph of considered criticism, not a pasted document. */
+const MAX_BODY = 8000;
+const MAX_ATTACHMENTS_PER_COMMENT = 12;
 
 const SEVERITIES: readonly Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
 const STATUSES: readonly FindingStatus[] = ['open', 'accepted', 'dismissed', 'resolved'];
@@ -299,23 +325,98 @@ function digestOf(value: unknown, fallback: Audit): PageSnapshotDigest {
   };
 }
 
+function attachment(value: unknown, annotationId: string, auditId: string): AnnotationAttachment | null {
+  if (!isObject(value)) return null;
+  const id = str(value['id']).slice(0, 128);
+  if (!id) return null;
+  const mime = str(value['mime'], 'image/png').slice(0, 64);
+  // Only the three types this build can decode. An attachment claiming to be
+  // an SVG or a PDF would render as a broken image at best, and an SVG in a
+  // report is a script vector at worst.
+  if (mime !== 'image/png' && mime !== 'image/jpeg' && mime !== 'image/webp') return null;
+  const result: AnnotationAttachment = {
+    id,
+    annotationId,
+    auditId,
+    mime,
+    bytes: Math.max(0, Math.round(num(value['bytes']))),
+    width: Math.max(0, Math.round(num(value['width']))),
+    height: Math.max(0, Math.round(num(value['height']))),
+    source: value['source'] === 'paste' ? 'paste' : 'file',
+    createdAt: num(value['createdAt'], Date.now()),
+  };
+  const caption = str(value['caption']).slice(0, 400);
+  if (caption) result.caption = caption;
+  return result;
+}
+
+function annotation(value: unknown, auditId: string): Annotation | null {
+  if (!isObject(value)) return null;
+  const id = str(value['id']).slice(0, 128);
+  const body = typeof value['body'] === 'string' ? value['body'].slice(0, MAX_BODY) : '';
+  // A comment with no id cannot be pinned or deleted, and one with no body is
+  // not a comment. Either way there is nothing to show, so it is dropped.
+  if (!id || !body.trim()) return null;
+
+  const result: Annotation = {
+    id,
+    auditId,
+    body,
+    attachments: (Array.isArray(value['attachments']) ? value['attachments'] : [])
+      .slice(0, MAX_ATTACHMENTS_PER_COMMENT)
+      .map((entry) => attachment(entry, id, auditId))
+      .filter((entry): entry is AnnotationAttachment => entry !== null),
+    createdAt: num(value['createdAt'], Date.now()),
+    updatedAt: num(value['updatedAt'], Date.now()),
+  };
+  const reference = elementReference(value['elementRef']);
+  if (reference) result.elementRef = reference;
+  const snapshotId = str(value['snapshotId']).slice(0, 128);
+  // Read as a pair, exactly as they are written: an index whose snapshot is
+  // unknown is not a shortcut and must not be offered as one.
+  if (
+    snapshotId &&
+    typeof value['elementIndex'] === 'number' &&
+    Number.isInteger(value['elementIndex'])
+  ) {
+    result.elementIndex = value['elementIndex'];
+    result.snapshotId = snapshotId;
+  }
+  if (isObject(value['documentRect'])) result.documentRect = rect(value['documentRect']);
+  return result;
+}
+
 const IMAGE_DATA_URL = /^data:image\/(png|jpeg|webp);base64,[A-Za-z0-9+/=]+$/;
 
-function screenshots(value: unknown, warnings: string[]): Record<string, string> | undefined {
+/**
+ * Validates a map of id -> inline image.
+ *
+ * Used for both finding crops and comment attachments, because the rule is the
+ * same for both and the consequence of getting it wrong is the same too: these
+ * strings go straight into an `src` attribute in the HTML report.
+ */
+function imageMap(
+  value: unknown,
+  noun: string,
+  limit: number,
+  warnings: string[],
+): Record<string, string> | undefined {
   if (!isObject(value)) return undefined;
   const out: Record<string, string> = {};
   let rejected = 0;
-  for (const [findingId, raw] of Object.entries(value)) {
-    if (Object.keys(out).length >= MAX_SCREENSHOTS) break;
+  for (const [id, raw] of Object.entries(value)) {
+    if (Object.keys(out).length >= limit) break;
     if (typeof raw !== 'string' || raw.length > MAX_SCREENSHOT_CHARS || !IMAGE_DATA_URL.test(raw)) {
       rejected += 1;
       continue;
     }
-    out[findingId.slice(0, 128)] = raw;
+    out[id.slice(0, 128)] = raw;
   }
   if (rejected > 0) {
     warnings.push(
-      `${rejected} screenshot${rejected === 1 ? '' : 's'} were dropped: only inline PNG, JPEG or WebP images are accepted.`,
+      `${rejected} ${noun}${rejected === 1 ? '' : 's'} ${
+        rejected === 1 ? 'was' : 'were'
+      } dropped: only inline PNG, JPEG or WebP images are accepted.`,
     );
   }
   return Object.keys(out).length > 0 ? out : undefined;
@@ -400,11 +501,62 @@ export function parseAuditFile(text: string): ParseOutcome {
     digest,
   };
 
-  const crops = screenshots(raw['screenshots'], warnings);
+  const crops = imageMap(raw['screenshots'], 'screenshot', MAX_SCREENSHOTS, warnings);
   if (crops) {
     const known = new Set(findings.map((item) => item.id));
     const matched = Object.fromEntries(Object.entries(crops).filter(([id]) => known.has(id)));
     if (Object.keys(matched).length > 0) file.screenshots = matched;
+  }
+
+  const rawAnnotations = Array.isArray(raw['annotations']) ? raw['annotations'] : [];
+  if (rawAnnotations.length > MAX_ANNOTATIONS) {
+    warnings.push(`The file listed ${rawAnnotations.length} comments; the first ${MAX_ANNOTATIONS} were kept.`);
+  }
+  const annotations: Annotation[] = [];
+  const seenComments = new Set<string>();
+  let droppedComments = 0;
+  for (const candidate of rawAnnotations.slice(0, MAX_ANNOTATIONS)) {
+    const parsed = annotation(candidate, parsedAudit.id);
+    if (!parsed || seenComments.has(parsed.id)) {
+      droppedComments += 1;
+      continue;
+    }
+    seenComments.add(parsed.id);
+    annotations.push(parsed);
+  }
+  if (droppedComments > 0) {
+    warnings.push(
+      `${droppedComments} comment${droppedComments === 1 ? '' : 's'} could not be read and were left out.`,
+    );
+  }
+
+  if (annotations.length > 0) {
+    const images = imageMap(raw['attachments'], 'attached image', MAX_SCREENSHOTS, warnings) ?? {};
+    // An attachment listed on a comment but with no image in the file is
+    // dropped from the comment too, so nothing downstream renders a broken
+    // picture -- and the comment's own text survives regardless.
+    let missing = 0;
+    const kept: Record<string, string> = {};
+    for (const item of annotations) {
+      item.attachments = item.attachments.filter((meta) => {
+        const image = images[meta.id];
+        if (!image) {
+          missing += 1;
+          return false;
+        }
+        kept[meta.id] = image;
+        return true;
+      });
+    }
+    if (missing > 0) {
+      warnings.push(
+        `${missing} attached image${missing === 1 ? '' : 's'} ${
+          missing === 1 ? 'was' : 'were'
+        } listed but not included in the file.`,
+      );
+    }
+    file.annotations = annotations;
+    if (Object.keys(kept).length > 0) file.attachments = kept;
   }
 
   return { ok: true, value: { file, warnings } };

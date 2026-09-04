@@ -6,14 +6,19 @@ import { displayOrigin } from '../shared/utils/url';
 import { countBySeverity } from '../audit/engine/run';
 import { carryAnnotations, compareAudits, type AuditDiff } from '../audit/engine/compare';
 import { renderReport, reportFileName } from '../report/render';
+import { buildAuditPdf, pdfFileName } from '../pdf/report';
 import { auditFileName, buildAuditFile, serializeAuditFile } from '../storage/file';
 import { saveFile } from '../storage/download';
-import type { Audit, Finding, Severity } from '../shared/types';
+import { carryComments } from '../storage/annotations';
+import type { AnnotationTarget } from '../shared/messaging/protocol';
+import type { Annotation, Audit, Finding, Severity } from '../shared/types';
 import { usePageConnection } from './state/usePageConnection';
 import { useAudit } from './state/useAudit';
 import { useLibrary, type ActiveAudit } from './state/useLibrary';
 import { useScreenshots } from './state/useScreenshots';
+import { useAnnotations, type AnnotationSource } from './state/useAnnotations';
 import {
+  commentPins,
   countByStatus,
   EMPTY_STATE,
   filterViews,
@@ -28,6 +33,7 @@ import { FindingDetail } from './components/FindingDetail';
 import { CompareCard } from './components/CompareCard';
 import { HistoryCard } from './components/HistoryCard';
 import { FilesCard } from './components/FilesCard';
+import { CommentsCard } from './components/CommentsCard';
 import { ElementInspector } from './components/ElementInspector';
 import { HoverReadout } from './components/HoverReadout';
 import { MessageLog } from './components/MessageLog';
@@ -47,6 +53,10 @@ export function App(): React.ReactElement {
   const [diff, setDiff] = useState<{ diff: AuditDiff; baselineAt: number } | null>(null);
   /** A file is being written. The picker gives no feedback of its own. */
   const [saving, setSaving] = useState(false);
+  /** The comment whose pin is highlighted, if it is a comment rather than a finding. */
+  const [openComment, setOpenComment] = useState<string | null>(null);
+  /** The element the user last picked to comment on, until they use it. */
+  const [commentTarget, setCommentTarget] = useState<AnnotationTarget | null>(null);
   const detailRef = useRef<HTMLDivElement>(null);
 
   const origin = useMemo(() => {
@@ -59,7 +69,30 @@ export function App(): React.ReactElement {
   }, [page.url]);
 
   const library = useLibrary(origin);
-  const shots = useScreenshots(active?.audit.id ?? null, send, page.elementRect);
+  const shots = useScreenshots(active?.audit.id ?? null, send, page.elementRect, page.band);
+
+  /**
+   * Where the comments on screen come from.
+   *
+   * Rebuilt whenever `active` changes, but only `auditId` and `openedAt` are
+   * read as the reload key -- so marking an audit as saved does not look like
+   * a new audit and discard what somebody just typed.
+   */
+  const commentSource = useMemo<AnnotationSource | null>(
+    () =>
+      active
+        ? {
+            auditId: active.audit.id,
+            openedAt: active.openedAt,
+            persisted: active.persisted,
+            imported: active.annotations
+              ? { annotations: active.annotations, attachments: active.attachments ?? {} }
+              : null,
+          }
+        : null,
+    [active],
+  );
+  const comments = useAnnotations(commentSource);
 
   /**
    * What the panel is showing, as of the last committed render.
@@ -76,10 +109,20 @@ export function App(): React.ReactElement {
     if (page.selection) setTab('element');
   }, [page.selection]);
   useEffect(() => {
-    if (page.lastToolbarAction === 'inspect') setTab('element');
+    if (page.lastToolbarAction?.action === 'inspect') setTab('element');
   }, [page.lastToolbarAction]);
+  /*
+   * Audit on the toolbar runs the audit, rather than only revealing the tab
+   * that holds the button that runs it.
+   *
+   * Revealing was all it used to do, which made it a button that did nothing
+   * whenever the panel was already on that tab -- and the panel opens on that
+   * tab. A magnifier labelled "Audit" has to audit.
+   */
   useEffect(() => {
-    if (page.lastToolbarAction === 'audit') setTab('audit');
+    if (page.lastToolbarAction?.action !== 'audit') return;
+    setTab('audit');
+    if (page.activated && !audit.running) audit.start();
   }, [page.lastToolbarAction]);
 
   /**
@@ -110,15 +153,59 @@ export function App(): React.ReactElement {
       persisted: false,
       openedAt: Date.now(),
     };
-    setActive(next);
-    setDiff(
-      comparable ? { diff: compareAudits(comparable.findings, findings), baselineAt: comparable.audit.createdAt } : null,
-    );
-    void library.persist(next).then((persisted) => {
-      if (persisted) setActive((current) => (current?.audit.id === next.audit.id ? { ...current, persisted } : current));
-    });
+    void (async () => {
+      /*
+       * Comments move to the new audit before it goes on screen.
+       *
+       * Order matters and is the whole reason this is not two statements: the
+       * comments hook reloads when the active audit id changes, so a carry
+       * that finished afterwards would be invisible until the panel was
+       * reopened, and one that finished during would race the read.
+       */
+      if (comparable) {
+        await carryComments(comparable.audit.id, result.audit.id).catch(() => {
+          /* nothing stored, or no storage: the audit still opens */
+        });
+      }
+      setActive(next);
+      setDiff(
+        comparable
+          ? { diff: compareAudits(comparable.findings, findings), baselineAt: comparable.audit.createdAt }
+          : null,
+      );
+      const persisted = await library.persist(next);
+      if (persisted) {
+        setActive((current) =>
+          current?.audit.id === next.audit.id ? { ...current, persisted } : current,
+        );
+      }
+    })();
     // library.persist is stable; depending on it would re-run this on refresh.
   }, [audit.result]);
+
+  /**
+   * Photographs the findings, once, as soon as an audit is on screen.
+   *
+   * A separate effect rather than the tail of the one above, and the reason is
+   * ordering rather than tidiness: the screenshot hook learns which audit to
+   * file crops under from a render, so starting the sweep inside that effect
+   * would write every picture against the *previous* audit's id. Waiting for
+   * the render that follows `setActive` is what makes them land in the right
+   * place.
+   *
+   * Only for a live audit -- one reopened from history has its crops already,
+   * and the page in front of the user may be nothing to do with it.
+   */
+  const swept = useRef<string | null>(null);
+  useEffect(() => {
+    if (!active || active.source !== 'live' || !shots.enabled) return;
+    if (!page.activated || !page.snapshot) return;
+    if (swept.current === active.audit.id) return;
+    swept.current = active.audit.id;
+    void shots.captureAll(active.findings, page.snapshot);
+    // shots.captureAll is stable, and re-running on findings changing would
+    // re-photograph the page every time somebody dismisses a row.
+  }, [active?.audit.id, shots.enabled, page.activated]);
 
   // Whatever is active drives the list. Keyed on when it was opened, not on
   // the object: marking an audit as saved must not reload it and throw away
@@ -132,8 +219,15 @@ export function App(): React.ReactElement {
   }, [active]);
 
   const visible = useMemo(() => filterViews(findings), [findings]);
-  const pins = useMemo(() => pinsFor(visible, active?.digest ?? null), [visible, active?.digest]);
-  const ordinals = useMemo(() => ordinalsOf(pins), [pins]);
+  const findingPinList = useMemo(() => pinsFor(visible, active?.digest ?? null), [visible, active?.digest]);
+  const commentPinList = useMemo(
+    () => commentPins(comments.annotations, active?.digest ?? null),
+    [comments.annotations, active?.digest],
+  );
+  // One draw for both series. The page distinguishes them by `kind`, and their
+  // ordinals are independent, so a merge here is only a concatenation.
+  const pins = useMemo(() => [...findingPinList, ...commentPinList], [findingPinList, commentPinList]);
+  const ordinals = useMemo(() => ordinalsOf(findingPinList), [findingPinList]);
   const counts = useMemo(
     () => (findings.views.length === 0 ? EMPTY_COUNTS : countBySeverity(findings.views.map((view) => view.finding))),
     [findings.views],
@@ -169,7 +263,7 @@ export function App(): React.ReactElement {
   }, [active, merged]);
 
   // Keep the page's pins in step with what the panel is showing.
-  const pinKey = pins.map((pin) => `${pin.findingId}:${pin.ordinal}:${pin.severity}`).join('|');
+  const pinKey = pins.map((pin) => `${pin.kind}:${pin.targetId}:${pin.ordinal}:${pin.severity ?? ''}`).join('|');
   useEffect(() => {
     if (!page.activated) return;
     if (pins.length === 0) send({ type: 'CLEAR_PINS' });
@@ -178,24 +272,56 @@ export function App(): React.ReactElement {
     // not cost the page a re-render.
   }, [pinKey, page.activated]);
 
+  /**
+   * Exactly one pin is highlighted at a time.
+   *
+   * A comment being open takes precedence because opening one is always the
+   * more recent action: selecting a finding clears it. Two highlighted pins
+   * would leave the user working out which one the panel is describing.
+   */
+  const activePin = openComment ?? findings.selectedId;
   useEffect(() => {
     if (!page.activated) return;
-    send({ type: 'SET_ACTIVE_FINDING', payload: { findingId: findings.selectedId } });
-  }, [findings.selectedId, page.activated]);
+    send({ type: 'SET_ACTIVE_PIN', payload: { targetId: activePin } });
+  }, [activePin, page.activated]);
 
-  // A pin click on the page opens that finding here.
+  // A pin click on the page opens that finding, or that comment, here.
   useEffect(() => {
     if (!page.pinClicked) return;
     setTab('audit');
-    dispatch({ type: 'select', id: page.pinClicked.findingId });
+    if (page.pinClicked.kind === 'comment') {
+      setOpenComment(page.pinClicked.targetId);
+      return;
+    }
+    setOpenComment(null);
+    dispatch({ type: 'select', id: page.pinClicked.targetId });
     detailRef.current?.scrollIntoView({ block: 'nearest' });
   }, [page.pinClicked]);
 
+  // The page reports the element the user clicked; hold it for the compose box.
+  useEffect(() => {
+    if (page.annotationTarget) setCommentTarget(page.annotationTarget);
+  }, [page.annotationTarget]);
+
+  // Pressing Comment on the page toolbar has to bring the panel to the card.
+  useEffect(() => {
+    if (page.lastToolbarAction?.action === 'comment') setTab('audit');
+  }, [page.lastToolbarAction]);
+
   /** Opening a finding should show it: the detail card sits below a long list. */
   const openFinding = useCallback((id: string) => {
+    setOpenComment(null);
     dispatch({ type: 'select', id });
     requestAnimationFrame(() => detailRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
   }, []);
+
+  /** Jumps the page to a comment's anchor, when it has one. */
+  const locateComment = useCallback(
+    (annotation: Annotation) => {
+      if (annotation.elementRef) send({ type: 'FOCUS_ELEMENT', payload: { ref: annotation.elementRef } });
+    },
+    [send],
+  );
 
   const locate = useCallback(
     (id: string) => {
@@ -251,6 +377,8 @@ export function App(): React.ReactElement {
       if (!next) return;
       audit.clear();
       setDiff(null);
+      setOpenComment(null);
+      setCommentTarget(null);
       setActive(next);
       setTab('audit');
     },
@@ -262,13 +390,15 @@ export function App(): React.ReactElement {
     setSaving(true);
     void (async () => {
       try {
-        const screenshots = await shots.dataUrls();
+        const [screenshots, attachments] = await Promise.all([shots.dataUrls(), comments.dataUrls()]);
         const file = buildAuditFile({
           audit: active.audit,
           findings: merged,
           digest: active.digest,
           productVersion: PRODUCT_VERSION,
           screenshots,
+          annotations: comments.annotations,
+          attachments,
         });
         const outcome = await saveFile(
           auditFileName(active.audit),
@@ -282,40 +412,87 @@ export function App(): React.ReactElement {
         setSaving(false);
       }
     })();
-  }, [active, library, merged, saving, shots]);
+  }, [active, comments, library, merged, saving, shots]);
+
+  /**
+   * The findings the user chose, or all of them if they chose none.
+   *
+   * A report with nothing in it would be a strange thing to hand someone, and
+   * "select nothing" is far more likely to mean "I have not got to that yet"
+   * than "send an empty report".
+   */
+  const chosenForReport = useCallback(
+    (): Finding[] =>
+      inReport.length > 0
+        ? merged.filter((finding) => inReport.some((view) => view.finding.id === finding.id))
+        : merged,
+    [inReport, merged],
+  );
 
   const saveReportFile = useCallback(() => {
     if (!active || saving) return;
     setSaving(true);
     void (async () => {
       try {
-        // What the user picked, or everything if they picked nothing. A report
-        // with no findings in it would be a strange thing to hand someone.
-        const chosen =
-          inReport.length > 0
-            ? merged.filter((finding) => inReport.some((view) => view.finding.id === finding.id))
-            : merged;
-        const screenshots = await shots.dataUrls();
+        const chosen = chosenForReport();
+        const [screenshots, attachments] = await Promise.all([shots.dataUrls(), comments.dataUrls()]);
         const html = renderReport({
           audit: active.audit,
           findings: chosen,
           digest: active.digest,
           screenshots,
+          annotations: comments.annotations,
+          attachments,
           productVersion: PRODUCT_VERSION,
           generatedAt: Date.now(),
           omitted: merged.length - chosen.length,
         });
         const outcome = await saveFile(reportFileName(active.audit), 'text/html', ['.html'], html);
-        if (outcome.saved) {
-          library.note(`Report saved with ${chosen.length} finding${chosen.length === 1 ? '' : 's'}.`);
-        } else if (!outcome.cancelled) {
-          library.note(outcome.reason);
-        }
+        if (outcome.saved) library.note(describeSaved('Report', chosen.length, comments.annotations.length));
+        else if (!outcome.cancelled) library.note(outcome.reason);
       } finally {
         setSaving(false);
       }
     })();
-  }, [active, inReport, library, merged, saving, shots]);
+  }, [active, chosenForReport, comments, library, merged, saving, shots]);
+
+  /**
+   * The same report as a PDF.
+   *
+   * Both are offered rather than one, because they are good at different
+   * things. The HTML file carries any alphabet and reads well on a screen; the
+   * PDF is what gets attached to a ticket or printed for a review, and its
+   * built-in fonts cannot draw every script -- which the PDF says on itself
+   * when it happens rather than leaving the reader to wonder.
+   */
+  const savePdfReport = useCallback(() => {
+    if (!active || saving) return;
+    setSaving(true);
+    void (async () => {
+      try {
+        const chosen = chosenForReport();
+        const [screenshots, attachments] = await Promise.all([shots.pdfImages(), comments.pdfImages()]);
+        const bytes = buildAuditPdf({
+          audit: active.audit,
+          findings: chosen,
+          digest: active.digest,
+          annotations: comments.annotations,
+          screenshots,
+          attachments,
+          productVersion: PRODUCT_VERSION,
+          generatedAt: Date.now(),
+          omitted: merged.length - chosen.length,
+        });
+        const outcome = await saveFile(pdfFileName(active.audit), 'application/pdf', ['.pdf'], bytes);
+        if (outcome.saved) library.note(describeSaved('PDF', chosen.length, comments.annotations.length));
+        else if (!outcome.cancelled) library.note(outcome.reason);
+      } catch (error) {
+        library.note(error instanceof Error ? error.message : 'The PDF could not be written.');
+      } finally {
+        setSaving(false);
+      }
+    })();
+  }, [active, chosenForReport, comments, library, merged, saving, shots]);
 
   // Escape closes the open finding, per spec section 38.
   useEffect(() => {
@@ -325,11 +502,19 @@ export function App(): React.ReactElement {
         send({ type: 'CANCEL_SELECTION' });
         return;
       }
+      if (page.annotating) {
+        send({ type: 'CANCEL_ANNOTATION' });
+        return;
+      }
+      if (openComment) {
+        setOpenComment(null);
+        return;
+      }
       if (findings.selectedId) dispatch({ type: 'select', id: null });
     };
     window.addEventListener('keydown', onKeyDown);
     return () => window.removeEventListener('keydown', onKeyDown);
-  }, [findings.selectedId, page.selecting, send]);
+  }, [findings.selectedId, openComment, page.annotating, page.selecting, send]);
 
   return (
     <div className="panel">
@@ -386,6 +571,18 @@ export function App(): React.ReactElement {
               onCancel={() => send({ type: 'CANCEL_SELECTION' })}
             />
             <AuditLauncher activated={page.activated} running={audit.running} onStart={audit.start} />
+
+            {shots.sweep ? (
+              /*
+               * Said out loud, because the page is visibly scrolling on its own
+               * while this runs. Unexplained movement in somebody's browser
+               * reads as a bug however good the reason is.
+               */
+              <div className="progress" role="status">
+                <span className="spinner" aria-hidden="true" />
+                Photographing findings — screenful {shots.sweep.done} of {shots.sweep.total}
+              </div>
+            ) : null}
 
             {audit.error ? (
               <p className="hint" role="alert" style={{ color: 'var(--danger)' }}>
@@ -451,6 +648,21 @@ export function App(): React.ReactElement {
               </>
             ) : null}
 
+            <CommentsCard
+              comments={comments}
+              activated={page.activated}
+              canComment={active !== null}
+              picking={page.annotating}
+              target={commentTarget}
+              snapshotId={active?.digest.snapshotId ?? null}
+              activeId={openComment}
+              onPick={() => send({ type: 'START_ANNOTATION' })}
+              onCancelPick={() => send({ type: 'CANCEL_ANNOTATION' })}
+              onClearTarget={() => setCommentTarget(null)}
+              onSelect={setOpenComment}
+              onLocate={locateComment}
+            />
+
             <HistoryCard
               library={library.state}
               activeAuditId={active?.audit.id ?? null}
@@ -463,10 +675,12 @@ export function App(): React.ReactElement {
               canExport={active !== null}
               reportCount={inReport.length}
               totalCount={findings.views.length}
+              commentCount={comments.annotations.length}
               busy={library.state.busy || saving}
               saving={saving}
               onSaveAudit={saveAuditFile}
               onSaveReport={saveReportFile}
+              onSavePdf={savePdfReport}
               onOpenText={(text) => void library.importText(text).then(adopt)}
             />
 
@@ -511,6 +725,13 @@ function ReopenedBanner({ active }: { active: ActiveAudit }): React.ReactElement
       placed by searching the live page, so they may be approximate. Run an audit to compare.
     </p>
   );
+}
+
+/** "Report saved with 12 findings and 3 comments." */
+function describeSaved(what: string, findings: number, comments: number): string {
+  const parts = [`${findings} finding${findings === 1 ? '' : 's'}`];
+  if (comments > 0) parts.push(`${comments} comment${comments === 1 ? '' : 's'}`);
+  return `${what} saved with ${parts.join(' and ')}.`;
 }
 
 function LibraryMessages({ library }: { library: ReturnType<typeof useLibrary> }): React.ReactElement | null {

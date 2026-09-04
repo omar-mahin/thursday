@@ -143,7 +143,12 @@ test('the side panel passes its own thirty rules', async ({
   await activate(seed);
 
   // Audited in the state it is actually read in: findings listed, one open,
-  // history and files present.
+  // history and files present, and a comment written with an image attached.
+  //
+  // The comment matters. A panel audited before anything is in it never
+  // renders the comment rows, the lettered marker or the attachment thumbnail
+  // and its remove control -- which is to say the newest UI, and the most
+  // likely to have a defect, would be the only part not covered.
   const panel = await context.newPage();
   await panel.setViewportSize({ width: 400, height: 900 });
   await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
@@ -151,6 +156,13 @@ test('the side panel passes its own thirty rules', async ({
   await expect(panel.locator('.finding-row').first()).toBeVisible();
   await panel.locator('.finding-row').first().click();
   await expect(panel.locator('.detail')).toBeVisible();
+
+  await panel.getByLabel('Comment', { exact: true }).fill('The label sits too close to the field.');
+  await panel
+    .getByLabel('Attach images to this comment')
+    .setInputFiles(resolve('tests/fixtures/annotation-image.png'));
+  await panel.getByRole('button', { name: 'Add comment' }).click();
+  await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
   const html = inlineStyles(await panel.content());
   await panel.close();
@@ -230,11 +242,42 @@ test('the exported report passes the rules it reports on', async ({
   });
   await driver.close();
 
+  // Rendered with a comment and an attached image in it, because the comments
+  // section has its own colours, its own markers and a figure with a caption
+  // -- none of which a report without comments would put on the page.
   const html = renderReport({
     audit: source.audit,
     findings: source.findings,
     digest: source.digest,
-    productVersion: '0.1.0',
+    annotations: [
+      {
+        id: 'self-audit-comment',
+        auditId: source.audit.id,
+        body: 'The two fields ask for the same thing, and the second one is not labelled.',
+        attachments: [
+          {
+            id: 'self-audit-image',
+            annotationId: 'self-audit-comment',
+            auditId: source.audit.id,
+            mime: 'image/png',
+            bytes: 116,
+            width: 48,
+            height: 32,
+            caption: 'The duplicated field pair',
+            source: 'file',
+            createdAt: Date.now(),
+          },
+        ],
+        createdAt: Date.now(),
+        updatedAt: Date.now(),
+      },
+    ],
+    attachments: {
+      'self-audit-image': `data:image/png;base64,${readFileSync(
+        resolve('tests/fixtures/annotation-image.png'),
+      ).toString('base64')}`,
+    },
+    productVersion: '0.2.0',
     generatedAt: Date.now(),
   });
 
@@ -343,7 +386,7 @@ test('every coloured label in the panel clears the contrast rule', async ({
   expect(samples.length).toBeGreaterThanOrEqual(10);
   assertReadable(samples);
 
-  await panel.locator('input[type=file]').setInputFiles(resolve('tests/fixtures/sample.thursday.json'));
+  await panel.getByLabel('Open a saved audit file').setInputFiles(resolve('tests/fixtures/sample.thursday.json'));
   await expect(panel.locator('.notice')).toContainText('Opened from a file');
   assertReadable(await sample(panel, ['.notice', '.history-when', '.dropzone']));
 });

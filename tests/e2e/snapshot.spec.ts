@@ -1,5 +1,11 @@
 import type { PageSnapshot } from '../../src/shared/types';
-import { exchange, expect, testWithHostAccess as test } from './fixtures';
+import {
+  assertUsableSecrets,
+  exchange,
+  expect,
+  LOGIN_SECRETS,
+  testWithHostAccess as test,
+} from './fixtures';
 
 /** Asks the page for a snapshot over the real port plumbing, as the panel does. */
 async function snapshot(
@@ -29,15 +35,10 @@ test('a snapshot of a login page contains no field values at all', async ({
   const result = await snapshot({ openFixture }, activate, extensionId, 'login.html');
   const serialized = JSON.stringify(result);
 
-  // Values that are present in the DOM and must never be collected.
-  for (const secret of [
-    'hunter2-secret',
-    '4111111111111111',
-    '737',
-    '123456',
-    'csrf-token-abcdef123456',
-    'ada@example.com',
-  ]) {
+  // Nothing in a field reaches the snapshot. The list and the reason it is
+  // shaped the way it is live in fixtures.ts.
+  assertUsableSecrets((label, ok) => expect(ok, label).toBe(true));
+  for (const secret of LOGIN_SECRETS) {
     expect(serialized, `leaked ${secret}`).not.toContain(secret);
   }
 

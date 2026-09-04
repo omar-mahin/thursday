@@ -99,7 +99,6 @@ body { min-width: 320px; }
 .sev-chip[data-severity='low'], .finding-sev[data-severity='low'] { color: var(--sev-low); }
 .sev-chip[data-severity='info'], .finding-sev[data-severity='info'] { color: var(--sev-info); }
 
-.findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
 .finding { border: 1px solid var(--line); border-radius: var(--radius); background: var(--bg-raised); overflow: hidden; }
 .finding-head {
   display: flex;
@@ -117,13 +116,16 @@ body { min-width: 320px; }
 .finding-title { font-weight: 500; }
 .finding-body { padding: 0 10px 10px; display: flex; flex-direction: column; gap: 10px; }
 .finding-summary { margin: 0; color: var(--fg); }
-.finding-meta { display: flex; flex-wrap: wrap; gap: 5px; }
+.finding-meta { display: flex; flex-wrap: wrap; gap: 8px; }
 .finding-block h3 {
   font-size: 12px;
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-dim);
-  margin: 0 0 3px;
+  /* 8, not 3. See the note on .findings: the panel's own spacing step is 8 and
+     UI-002 named this gap -- it sits above every paragraph and list in an open
+     finding, so it was one declaration producing many outliers. */
+  margin: 0 0 8px;
 }
 .finding-block p { margin: 0; }
 .finding-block ul { margin: 0; padding-left: 16px; }
@@ -172,7 +174,16 @@ body { min-width: 320px; }
   color: var(--fg-dim);
 }
 
-.findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+/*
+ * 8px, and it was 4px until Thursday's own UI-002 said so.
+ *
+ * The rule works out a page's dominant spacing step and reports what sits off
+ * it; the panel's step is 8, and the findings list -- one gap per row, so the
+ * largest single group of gaps on the surface -- was the biggest thing off it.
+ * There was a second, dead `.findings` rule above this one setting 6px, which
+ * is how the inconsistency got in.
+ */
+.findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .group-items { list-style: none; margin: 0; padding: 0 0 4px; display: flex; flex-direction: column; gap: 2px; }
 .group-items .finding.group > .finding-head .mono { white-space: nowrap; flex: none; }
 .finding-row { border-radius: 0; border-left: 2px solid var(--line); margin-left: 10px; }
@@ -345,3 +356,88 @@ button.icon:hover { color: var(--fg); background: none; }
   border-radius: 6px;
   background: var(--bg);
 }
+
+/* -- comments ------------------------------------------------------------ */
+.comment-compose { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
+.comment-compose textarea,
+.comment-row textarea {
+  width: 100%;
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 6px 8px;
+  resize: vertical;
+}
+.comment-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.comment-row {
+  border: 1px solid var(--line);
+  border-left: 3px solid var(--comment);
+  border-radius: var(--radius);
+  background: var(--bg-raised);
+  padding: 8px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+.comment-row[data-current='true'] { border-color: var(--accent); border-left-color: var(--comment); }
+.comment-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.comment-head .hint:last-child { margin-left: auto; flex: none; }
+/*
+ * The lettered marker doubles as the button that jumps to the comment's
+ * anchor, so it carries the 24px minimum rather than the 22px the pin uses:
+ * a pin sits under a pointer on a wide page, this sits in a 320px column.
+ */
+.comment-marker {
+  flex: none;
+  display: grid;
+  place-items: center;
+  min-width: 24px;
+  min-height: 24px;
+  padding: 0;
+  border: 0;
+  border-radius: 5px;
+  background: var(--comment);
+  color: var(--comment-fg);
+  font-size: 12px;
+  font-weight: 700;
+}
+.comment-marker:hover:not(:disabled) { filter: brightness(1.1); background: var(--comment); }
+.comment-body { margin: 0; font-size: 13px; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* -- attachments --------------------------------------------------------- */
+.attach-queue { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 3px; }
+.attach-queue li { display: flex; align-items: center; gap: 6px; font-size: 12px; min-width: 0; }
+.attach-queue li .truncate { flex: 1; }
+.attach-grid { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 6px; }
+.attach-grid li {
+  position: relative;
+  /* Shrink to the image so the remove control sits on its corner. Left to fill
+     the row, a small crop leaves the button floating in white space with
+     nothing to say which image it belongs to. */
+  width: max-content;
+  max-width: 100%;
+}
+.attach-grid img {
+  display: block;
+  /* Scaled down to fit, never up: a small crop shown at four times its size
+     is a blurry rectangle, and the panel is only 320px wide to begin with. */
+  max-width: 100%;
+  height: auto;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  background: var(--bg);
+}
+/* The remove control sits on the image, on its own plate so it stays legible
+   over whatever the screenshot happens to show underneath it. */
+.attach-grid li > button.icon {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  color: var(--fg);
+}
+.attach-grid li > button.icon:hover { background: var(--bg-hover); }

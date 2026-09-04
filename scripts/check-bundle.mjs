@@ -38,7 +38,7 @@ const BUDGETS = [
   { pattern: /^content\.js$/, kb: 60, note: 'injected into every audited page' },
   { pattern: /^service-worker\.js$/, kb: 20, note: 'a router, nothing more' },
   { pattern: /^assets\/vendor\.js$/, kb: 240, note: 'React and React DOM' },
-  { pattern: /^assets\/sidepanel\.js$/, kb: 160, note: 'the panel, the rules and the report' },
+  { pattern: /^assets\/sidepanel\.js$/, kb: 200, note: 'the panel, the rules, both report writers and the PDF font metrics' },
 ];
 
 const TOTAL_BUDGET_KB = 700;

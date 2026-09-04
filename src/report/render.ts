@@ -1,9 +1,11 @@
 import { CATEGORY_LABELS } from '../audit/engine/registry';
 import { SEVERITY_LABELS } from '../audit/engine/severity';
 import { countBySeverity } from '../audit/engine/run';
+import { commentLabel } from '../shared/utils/labels';
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from '../shared/constants/product';
-import type { Audit, Finding, PageSnapshotDigest, Severity } from '../shared/types';
+import type { Annotation, Audit, Finding, PageSnapshotDigest, Severity } from '../shared/types';
 import { escapeHtml, safeImageSource, safeLink } from './escape';
+import { coverageNotices } from './notices';
 import { REPORT_CSS } from './styles';
 
 export type ReportInput = {
@@ -13,6 +15,10 @@ export type ReportInput = {
   digest: PageSnapshotDigest;
   /** findingId -> data URL. */
   screenshots?: Record<string, string>;
+  /** The user's own comments, in the order they were written. */
+  annotations?: readonly Annotation[];
+  /** attachmentId -> data URL, for the images inside those comments. */
+  attachments?: Record<string, string>;
   productVersion: string;
   generatedAt: number;
   /** Findings the audit produced but the user left out. Stated, not hidden. */
@@ -44,6 +50,7 @@ const dateTime = (at: number): string =>
  */
 export function renderReport(input: ReportInput): string {
   const { audit, digest, findings } = input;
+  const annotations = input.annotations ?? [];
   const counts = countBySeverity(findings);
   const title = audit.title || audit.url || 'Untitled page';
 
@@ -81,6 +88,7 @@ export function renderReport(input: ReportInput): string {
     ${SEVERITY_ORDER.filter((severity) => counts[severity] > 0)
       .map((severity) => `<li data-severity="${severity}">${counts[severity]} ${escapeHtml(SEVERITY_LABELS[severity].toLowerCase())}</li>`)
       .join('\n    ')}
+    ${annotations.length > 0 ? `<li data-kind="comment">${annotations.length} comment${annotations.length === 1 ? '' : 's'}</li>` : ''}
   </ul>
   ${notices(input)}
 </header>
@@ -95,6 +103,7 @@ ${group.items.map((finding) => renderFinding(finding, input)).join('\n')}
 </section>`,
           )
           .join('\n')}
+${renderComments(annotations, input)}
 
 <footer class="report-foot">
   <p><strong>${escapeHtml(PRODUCT_NAME)} ${escapeHtml(input.productVersion)}</strong> — ${escapeHtml(PRODUCT_TAGLINE)}</p>
@@ -107,31 +116,80 @@ ${group.items.map((finding) => renderFinding(finding, input)).join('\n')}
 `;
 }
 
-function notices(input: ReportInput): string {
-  const lines: string[] = [];
-  if (input.audit.truncated) {
-    lines.push(
-      `This page had more elements than one pass examines, so ${input.digest.elementCount} were measured and the rest were not. Findings below are complete for what was examined, not for the whole page.`,
-    );
-  }
-  const { crossOrigin, sameOrigin } = input.audit.framesNotInspected;
-  const frames = crossOrigin + sameOrigin;
-  if (frames > 0) {
-    lines.push(
-      `${frames} embedded frame${frames === 1 ? '' : 's'}${
-        crossOrigin > 0 && sameOrigin > 0 ? ` (${crossOrigin} from another origin)` : ''
-      } ${frames === 1 ? 'was' : 'were'} enumerated but not looked inside. Nothing within ${
-        frames === 1 ? 'it' : 'them'
-      } is covered by this report.`,
-    );
-  }
-  if (input.omitted && input.omitted > 0) {
-    lines.push(
-      `${input.omitted} further finding${input.omitted === 1 ? ' was' : 's were'} produced by this audit but not selected for this report.`,
-    );
-  }
-  return lines.map((line) => `<p class="notice">${escapeHtml(line)}</p>`).join('\n  ');
+const notices = (input: ReportInput): string =>
+  coverageNotices(input)
+    .map((line) => `<p class="notice">${escapeHtml(line)}</p>`)
+    .join('\n  ');
+
+/**
+ * The comments the user wrote, as their own section.
+ *
+ * Deliberately after the findings and deliberately labelled. A comment is
+ * someone's judgement; a finding is a measurement Thursday will defend. Mixing
+ * the two into one list -- which would be easier to build and read slightly
+ * better -- would let an opinion inherit the authority of the numbers above
+ * it, and that is the trade this whole product refuses to make.
+ */
+function renderComments(annotations: readonly Annotation[], input: ReportInput): string {
+  if (annotations.length === 0) return '';
+  return `<section class="comments">
+<h2>Comments — ${annotations.length}</h2>
+<p class="dim">Written by hand during the audit. These are observations and opinions, not measurements, and ${escapeHtml(
+    PRODUCT_NAME,
+  )} makes no claim about them.</p>
+${annotations.map((annotation, index) => renderComment(annotation, index + 1, input)).join('\n')}
+</section>`;
 }
+
+function renderComment(annotation: Annotation, ordinal: number, input: ReportInput): string {
+  const marker = commentLabel(ordinal);
+  const images = annotation.attachments
+    .map((meta) => {
+      const source = input.attachments?.[meta.id];
+      const safe = source ? safeImageSource(source) : null;
+      if (!safe) return '';
+      // The caption is the alt text as well as the visible label: it is the
+      // user's own description of what they photographed, which is exactly
+      // what alt text is for.
+      const description = meta.caption || `Image attached to comment ${marker}`;
+      return `<figure class="shot"><img alt="${escapeHtml(description)}" src="${escapeHtml(safe)}">${
+        meta.caption ? `<figcaption>${escapeHtml(meta.caption)}</figcaption>` : ''
+      }</figure>`;
+    })
+    .join('\n  ');
+
+  return `<article class="finding comment">
+  <div class="finding-head">
+    <span class="sev" data-kind="comment">${escapeHtml(marker)}</span>
+    <h3>Comment ${escapeHtml(marker)}</h3>
+  </div>
+  <p class="body">${paragraphs(annotation.body)}</p>
+  ${images}
+  <div class="where">${
+    annotation.elementRef
+      ? `Element: ${escapeHtml(describe(annotation.elementRef))}${
+          annotation.elementRef.structuralPath
+            ? `<div class="mono">${escapeHtml(annotation.elementRef.structuralPath)}</div>`
+            : ''
+        }`
+      : 'No element anchor: this comment is about the page as a whole.'
+  }</div>
+  <div class="dim">Written ${escapeHtml(dateTime(annotation.createdAt))}</div>
+</article>`;
+}
+
+/**
+ * Keeps the line breaks the user typed.
+ *
+ * A comment is prose someone wrote in a textarea, and collapsing their
+ * paragraphs into one block would be losing information they put there on
+ * purpose. Escaped first, then broken -- never the other way round.
+ */
+const paragraphs = (text: string): string =>
+  escapeHtml(text)
+    .split(/\n{2,}/)
+    .map((block) => block.replace(/\n/g, '<br>'))
+    .join('</p><p class="body">');
 
 function renderFinding(finding: Finding, input: ReportInput): string {
   const shot = input.screenshots?.[finding.id];
@@ -165,6 +223,12 @@ function renderFinding(finding: Finding, input: ReportInput): string {
 function where(finding: Finding): string {
   const reference = finding.elementRef;
   if (!reference) return '';
+  const path = reference.structuralPath ? `<div class="mono">${escapeHtml(reference.structuralPath)}</div>` : '';
+  return `<div class="where">Element: ${escapeHtml(describe(reference))}${path}</div>`;
+}
+
+/** One element, in one line, without the structural path. */
+function describe(reference: NonNullable<Finding['elementRef']>): string {
   const parts: string[] = [`<${reference.tagName}>`];
   if (reference.role) parts.push(`role=${reference.role}`);
   if (reference.accessibleName) parts.push(`name "${reference.accessibleName}"`);
@@ -172,8 +236,7 @@ function where(finding: Finding): string {
   if (reference.stableAttribute) {
     parts.push(`${reference.stableAttribute.name}="${reference.stableAttribute.value}"`);
   }
-  const path = reference.structuralPath ? `<div class="mono">${escapeHtml(reference.structuralPath)}</div>` : '';
-  return `<div class="where">Element: ${escapeHtml(parts.join(' · '))}${path}</div>`;
+  return parts.join(' · ');
 }
 
 export function reportFileName(audit: Audit): string {

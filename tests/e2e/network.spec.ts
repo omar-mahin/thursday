@@ -76,7 +76,7 @@ testWithHostAccess(
     ]);
 
     // Read one back in.
-    await panel.locator('input[type=file]').setInputFiles(resolve('tests/fixtures/sample.thursday.json'));
+    await panel.getByLabel('Open a saved audit file').setInputFiles(resolve('tests/fixtures/sample.thursday.json'));
     await expect(panel.locator('.notice')).toContainText('Opened from a file');
 
     // Re-audit, so the comparison path runs too.
@@ -91,8 +91,22 @@ testWithHostAccess(
     await options.goto(`chrome-extension://${extensionId}/options.html`);
     await expect(options.locator('.origins li').first()).toBeVisible();
 
+    /*
+     * `blob:chrome-extension://<this extension>/...` is allowed, and only that.
+     *
+     * The browser reports loading an object URL as a request, and the panel
+     * makes them: a comment's attached image and a screenshot crop are shown
+     * from `URL.createObjectURL`. A blob URL on our own origin is a handle to
+     * memory in this page -- there is no fetch, no socket and nowhere for it to
+     * go. The exemption is written narrowly on purpose, so a blob URL belonging
+     * to any other origin would still fail this test.
+     */
+    const ownBlob = `blob:chrome-extension://${extensionId}/`;
     const offenders = requests.filter(
-      (url) => !url.startsWith(`${FIXTURE_ORIGIN}/`) && !url.startsWith('chrome-extension://'),
+      (url) =>
+        !url.startsWith(`${FIXTURE_ORIGIN}/`) &&
+        !url.startsWith('chrome-extension://') &&
+        !url.startsWith(ownBlob),
     );
     expect(offenders, `unexpected requests:\n${offenders.join('\n')}`).toEqual([]);
   },

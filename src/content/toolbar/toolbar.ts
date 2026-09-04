@@ -1,5 +1,6 @@
-import { PRODUCT_NAME } from '../../shared/constants/product';
+import { PRODUCT_CREDIT, PRODUCT_NAME } from '../../shared/constants/product';
 import type { ToolbarAction } from '../../shared/messaging/protocol';
+import { createIcon, TOOLBAR_ICONS } from './icons';
 
 export type ToolbarOptions = {
   onAction(action: ToolbarAction): void;
@@ -12,27 +13,42 @@ export type Toolbar = {
   setPressed(action: ToolbarAction, pressed: boolean): void;
   setEnabled(action: ToolbarAction, enabled: boolean): void;
   announce(text: string): void;
+  /**
+   * Centres the toolbar on the viewport.
+   *
+   * Separate from construction because it has to measure, and an element that
+   * is not in a document yet has no width. Called only when there is no
+   * remembered position to honour.
+   */
+  centre(): void;
   destroy(): void;
 };
 
 type ButtonSpec = {
   action: ToolbarAction;
+  /**
+   * The accessible name, and the words the tooltip shows.
+   *
+   * One string for both, so a button can never be labelled one thing for a
+   * screen reader and another for the pointer.
+   */
   label: string;
-  /** Icon-only buttons get an aria-label instead of visible text. */
-  icon?: string;
   enabled: boolean;
+  /** True for the two buttons that are modes rather than one-off actions. */
+  toggle?: boolean;
 };
 
+/** The actions. Enabled once the page has answered. */
 const BUTTONS: ButtonSpec[] = [
   { action: 'audit', label: 'Audit', enabled: false },
-  { action: 'select', label: 'Select', enabled: false },
+  { action: 'select', label: 'Select', enabled: false, toggle: true },
+  { action: 'comment', label: 'Comment', enabled: false, toggle: true },
   { action: 'inspect', label: 'Inspect', enabled: false },
-  { action: 'report', label: 'Report', enabled: false },
 ];
 
-const ICON_BUTTONS: ButtonSpec[] = [
-  { action: 'settings', label: 'Settings', icon: '⚙', enabled: true },
-  { action: 'close', label: `Close ${PRODUCT_NAME}`, icon: '✕', enabled: true },
+/** Utilities, always available, kept behind a separator. */
+const UTILITY_BUTTONS: ButtonSpec[] = [
+  { action: 'close', label: `Close ${PRODUCT_NAME}`, enabled: true },
 ];
 
 const MARGIN = 12;
@@ -52,9 +68,22 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   grip.title = `Drag to move ${PRODUCT_NAME}`;
   for (let i = 0; i < 6; i += 1) grip.append(document.createElement('span'));
 
+  /*
+   * The brandmark, with its credit under it.
+   *
+   * Two elements rather than one string with a line break: the name and the
+   * credit are set differently -- weight, size, colour -- and the difference
+   * is what stops the credit competing with the product name.
+   */
   const brand = document.createElement('div');
   brand.className = 'brand';
-  brand.textContent = PRODUCT_NAME;
+  const brandName = document.createElement('span');
+  brandName.className = 'brand-name';
+  brandName.textContent = PRODUCT_NAME;
+  const brandCredit = document.createElement('span');
+  brandCredit.className = 'brand-credit';
+  brandCredit.textContent = PRODUCT_CREDIT;
+  brand.append(brandName, brandCredit);
 
   const live = document.createElement('div');
   live.className = 'sr';
@@ -64,20 +93,36 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   element.append(grip, brand, separator());
 
   const buttons = new Map<ToolbarAction, HTMLButtonElement>();
+
+  /**
+   * One icon button.
+   *
+   * The name lives in `aria-label` and the tooltip is `aria-hidden`, rather
+   * than the other way round. It matters: the tooltip is only visible on hover
+   * or focus, so if the accessible name came from it, the name would blink in
+   * and out of existence with the pointer. This way the label is constant and
+   * the tooltip is decoration that happens to say the same thing.
+   */
   const addButton = (spec: ButtonSpec): void => {
     const button = document.createElement('button');
     button.type = 'button';
+    button.className = 'tb-btn';
     button.dataset['action'] = spec.action;
     button.disabled = !spec.enabled;
     button.tabIndex = -1; // roving tabindex, set below
-    if (spec.icon) {
-      button.className = 'icon-btn';
-      button.textContent = spec.icon;
-      button.setAttribute('aria-label', spec.label);
-    } else {
-      button.textContent = spec.label;
-      button.setAttribute('aria-pressed', 'false');
-    }
+    button.setAttribute('aria-label', spec.label);
+    // Only on the buttons that really are modes. A pressed state on a button
+    // that just does a thing tells a screen-reader user it toggles when it
+    // does not.
+    if (spec.toggle) button.setAttribute('aria-pressed', 'false');
+
+    button.append(createIcon(TOOLBAR_ICONS[spec.action]));
+    const tip = document.createElement('span');
+    tip.className = 'tb-tip';
+    tip.setAttribute('aria-hidden', 'true');
+    tip.textContent = spec.label;
+    button.append(tip);
+
     button.addEventListener('click', () => options.onAction(spec.action), { signal });
     buttons.set(spec.action, button);
     element.append(button);
@@ -85,7 +130,7 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
 
   for (const spec of BUTTONS) addButton(spec);
   element.append(separator());
-  for (const spec of ICON_BUTTONS) addButton(spec);
+  for (const spec of UTILITY_BUTTONS) addButton(spec);
   element.append(live);
 
   // --- roving tabindex (WAI-ARIA toolbar pattern) ---------------------------
@@ -120,7 +165,7 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   );
 
   // --- dragging -------------------------------------------------------------
-  let position = options.initialPosition ?? defaultPosition();
+  let position = options.initialPosition ?? { x: MARGIN, y: MARGIN };
   let dragStart: { pointerX: number; pointerY: number; originX: number; originY: number } | null = null;
   let frame = 0;
 
@@ -198,7 +243,10 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   return {
     element,
     setPressed(action, pressed) {
-      buttons.get(action)?.setAttribute('aria-pressed', String(pressed));
+      const button = buttons.get(action);
+      // Guarded, so a caller cannot invent a pressed state on a button that
+      // was never declared a toggle.
+      if (button?.hasAttribute('aria-pressed')) button.setAttribute('aria-pressed', String(pressed));
     },
     setEnabled(action, enabled) {
       const button = buttons.get(action);
@@ -208,6 +256,10 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
     },
     announce(text) {
       live.textContent = text;
+    },
+    centre() {
+      position = clamp({ x: Math.round((window.innerWidth - element.offsetWidth) / 2), y: MARGIN });
+      apply();
     },
     destroy() {
       if (frame) cancelAnimationFrame(frame);
@@ -221,8 +273,4 @@ function separator(): HTMLElement {
   const element = document.createElement('div');
   element.className = 'sep';
   return element;
-}
-
-function defaultPosition(): { x: number; y: number } {
-  return { x: Math.max(MARGIN, Math.round(window.innerWidth / 2) - 180), y: MARGIN };
 }

@@ -1,7 +1,8 @@
 import { beforeEach, describe, expect, it } from 'vitest';
 import { element, resetIndexes, snapshot } from './helpers/snapshot';
 import { digestFor, locationIndex } from '../../src/audit/engine/digest';
-import { cropRegion, cropScale, CROP_PADDING } from '../../src/sidepanel/capture/crop';
+import { cropScale } from '../../src/sidepanel/capture/crop';
+import { CONTEXT_PADDING, cropWindow, MIN_CROP } from '../../src/sidepanel/capture/compose';
 import { base64ToBytes, dataUrlToBlob, parseDataUrl } from '../../src/shared/utils/base64';
 import { newId } from '../../src/shared/utils/id';
 import type { Finding } from '../../src/shared/types';
@@ -90,63 +91,52 @@ describe('crop scale', () => {
   });
 });
 
-describe('crop geometry', () => {
-  const image = { width: 2560, height: 1600 };
+describe('the crop window', () => {
+  /*
+   * The framing arithmetic, which replaced cropRegion.
+   *
+   * Same class of bug, moved: get this wrong and the report carries a
+   * confident photograph of the wrong part of the page, which is a worse
+   * outcome than no photograph at all.
+   */
+  const viewport = { width: 1280, height: 800 };
 
-  it('scales a CSS rect by the measured scale', () => {
-    expect(cropRegion({ x: 100, y: 50, width: 200, height: 40 }, image, 2, 0)).toEqual({
-      x: 200,
-      y: 100,
-      width: 400,
-      height: 80,
-    });
+  it('centres the window on the element', () => {
+    const window = cropWindow({ x: 600, y: 380, width: 80, height: 40 }, viewport);
+    expect(window.x + window.width / 2).toBeCloseTo(640);
+    expect(window.y + window.height / 2).toBeCloseTo(400);
   });
 
-  it('adds padding so the element is not cut flush to its edge', () => {
-    expect(cropRegion({ x: 100, y: 50, width: 200, height: 40 }, image, 1)).toEqual({
-      x: 100 - CROP_PADDING,
-      y: 50 - CROP_PADDING,
-      width: 200 + CROP_PADDING * 2,
-      height: 40 + CROP_PADDING * 2,
-    });
+  it('never goes below the minimum, however small the element', () => {
+    // A 40x18 button with 8px of padding was the old behaviour, and a
+    // photograph of a 56x34 grey rectangle is not a photograph of anything.
+    const window = cropWindow({ x: 600, y: 380, width: 40, height: 18 }, viewport);
+    expect(window.width).toBe(MIN_CROP.width);
+    expect(window.height).toBe(MIN_CROP.height);
   });
 
-  it('clamps to the image instead of asking for pixels it does not have', () => {
-    // Canvas pads a region beyond the image with transparency, which looks
-    // like empty space around the element rather than a clipped crop.
-    expect(cropRegion({ x: -20, y: -20, width: 100, height: 100 }, image, 1, 0)).toEqual({
-      x: 0,
-      y: 0,
-      width: 80,
-      height: 80,
-    });
+  it('gives a large element real context on every side', () => {
+    const window = cropWindow({ x: 400, y: 300, width: 500, height: 200 }, viewport);
+    expect(window.width).toBe(500 + CONTEXT_PADDING * 2);
+    expect(window.height).toBe(200 + CONTEXT_PADDING * 2);
   });
 
-  it('clamps at the bottom-right corner too', () => {
-    expect(cropRegion({ x: 2500, y: 1580, width: 400, height: 400 }, image, 1, 0)).toEqual({
-      x: 2500,
-      y: 1580,
-      width: 60,
-      height: 20,
-    });
+  it('slides back inside the viewport rather than hanging off it', () => {
+    // A window past the edge would be padded with blank canvas, which reads as
+    // empty page rather than as a crop that ran out of room.
+    const topLeft = cropWindow({ x: 0, y: 0, width: 20, height: 20 }, viewport);
+    expect(topLeft.x).toBe(0);
+    expect(topLeft.y).toBe(0);
+
+    const bottomRight = cropWindow({ x: 1270, y: 790, width: 10, height: 10 }, viewport);
+    expect(bottomRight.x + bottomRight.width).toBe(viewport.width);
+    expect(bottomRight.y + bottomRight.height).toBe(viewport.height);
   });
 
-  it('refuses an element that is entirely outside the captured area', () => {
-    expect(cropRegion({ x: 4000, y: 0, width: 100, height: 100 }, image, 1, 0)).toBeNull();
-    expect(cropRegion({ x: 0, y: -500, width: 100, height: 100 }, image, 1, 0)).toBeNull();
-  });
-
-  it('refuses a collapsed element', () => {
-    expect(cropRegion({ x: 10, y: 10, width: 0, height: 0 }, image, 1, 0)).toBeNull();
-  });
-
-  it('treats a nonsense scale as 1', () => {
-    expect(cropRegion({ x: 0, y: 0, width: 10, height: 10 }, image, 0, 0)).toEqual({
-      x: 0,
-      y: 0,
-      width: 10,
-      height: 10,
-    });
+  it('never asks for more than the viewport has', () => {
+    const narrow = { width: 300, height: 150 };
+    const window = cropWindow({ x: 10, y: 10, width: 280, height: 130 }, narrow);
+    expect(window).toEqual({ x: 0, y: 0, width: 300, height: 150 });
   });
 });
 

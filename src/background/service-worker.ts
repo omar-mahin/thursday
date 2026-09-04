@@ -215,6 +215,9 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'PIN_CLICKED':
     case 'ELEMENT_RESOLVED':
     case 'ELEMENT_RECT':
+    case 'ANNOTATION_TARGET':
+    case 'ANNOTATION_STATE':
+    case 'BAND_READY':
     case 'TOOLBAR_ACTION':
     case 'ERROR':
       toPanels(message, tabId);
@@ -231,9 +234,12 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'AUDIT_PROGRESS':
     case 'RENDER_PINS':
     case 'CLEAR_PINS':
-    case 'SET_ACTIVE_FINDING':
+    case 'SET_ACTIVE_PIN':
     case 'FOCUS_ELEMENT':
     case 'REQUEST_ELEMENT_RECT':
+    case 'START_ANNOTATION':
+    case 'CANCEL_ANNOTATION':
+    case 'CAPTURE_BAND':
       return;
     default:
       assertNever(message, 'routeFromContent');
@@ -260,9 +266,12 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'REQUEST_SNAPSHOT':
     case 'RENDER_PINS':
     case 'CLEAR_PINS':
-    case 'SET_ACTIVE_FINDING':
+    case 'SET_ACTIVE_PIN':
     case 'FOCUS_ELEMENT':
-    case 'REQUEST_ELEMENT_RECT': {
+    case 'REQUEST_ELEMENT_RECT':
+    case 'START_ANNOTATION':
+    case 'CANCEL_ANNOTATION':
+    case 'CAPTURE_BAND': {
       const tabId = await targetTab();
       if (tabId === undefined || !toContent(tabId, message)) panelError('NOT_ACTIVATED');
       return;
@@ -280,6 +289,9 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'PIN_CLICKED':
     case 'ELEMENT_RESOLVED':
     case 'ELEMENT_RECT':
+    case 'ANNOTATION_TARGET':
+    case 'ANNOTATION_STATE':
+    case 'BAND_READY':
     case 'TOOLBAR_ACTION':
     case 'ERROR':
       return;
