@@ -74,14 +74,36 @@ export const CONTENT_CSS = `
 }
 .grip:hover { background: var(--thu-bg-hover); }
 
+/*
+ * The brandmark: the name, with its credit set under it.
+ *
+ * The credit has to read as subordinate without becoming unreadable, so the
+ * separation is carried by weight and colour rather than by shrinking the type
+ * much further. Both still clear 4.5:1 against the toolbar in either theme --
+ * a credit line nobody can read is not a credit.
+ */
 .brand {
-  padding: 0 6px 0 2px;
-  font-size: 11px;
-  font-weight: 600;
-  letter-spacing: 0.06em;
-  text-transform: uppercase;
-  color: var(--thu-fg-dim);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  gap: 1px;
+  padding: 0 9px 0 3px;
   white-space: nowrap;
+}
+.brand-name {
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  line-height: 1.1;
+  color: var(--thu-fg);
+}
+.brand-credit {
+  font-size: 10px;
+  font-weight: 500;
+  letter-spacing: 0.02em;
+  line-height: 1.1;
+  color: var(--thu-fg-dim);
 }
 
 .sep {
@@ -114,13 +136,94 @@ button:focus-visible {
   outline-offset: 2px;
 }
 
-.icon-btn {
-  padding: 6px 7px;
-  color: var(--thu-fg-dim);
-  font-size: 14px;
-  line-height: 1;
+/*
+ * The action buttons.
+ *
+ * 30px square, which clears the 24px floor in WCAG 2.5.8 with room to spare --
+ * this is a toolbar that floats over somebody else's page, so it is worth
+ * being comfortably hittable rather than exactly compliant.
+ */
+.tb-btn {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 30px;
+  height: 30px;
+  padding: 0;
+  color: var(--thu-fg);
 }
-.icon-btn:hover:not(:disabled) { color: var(--thu-fg); }
+.tb-btn:disabled {
+  /*
+   * Dimmed and faded, because an icon has no text weight to lose. Without the
+   * opacity a disabled icon looks exactly like an available one -- the labels
+   * used to carry that difference on their own, and icons do not.
+   *
+   * Below 4.5:1 on purpose: WCAG 1.4.3 exempts inactive controls, and a
+   * disabled button that reads as available is the worse mistake.
+   */
+  color: var(--thu-fg-dim);
+  opacity: 0.5;
+}
+
+/*
+ * One place decides how the whole set is drawn.
+ *
+ * The path data in icons.ts carries no stroke, weight or cap of its own, so
+ * these five declarations are the entire appearance of every icon. 1.5 is the
+ * weight the set was drawn at; nudging it here re-weights all seven together,
+ * which is the point.
+ */
+.tb-icon {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+}
+/* White on the accent fill when a mode is on, icon included. */
+.tb-btn[aria-pressed="true"] { color: #fff; }
+
+/*
+ * The label, on hover and on focus.
+ *
+ * On focus as well as hover, and that is the whole point of doing this in CSS
+ * rather than with a title attribute: a native tooltip waits a second,
+ * cannot be styled, and never appears for somebody arriving by keyboard. This
+ * one is instant and appears for both.
+ *
+ * Marked aria-hidden in the markup, and never the button's accessible name -- see
+ * addButton in toolbar.ts.
+ */
+.tb-tip {
+  position: absolute;
+  top: calc(100% + 7px);
+  left: 50%;
+  z-index: 1;
+  padding: 3px 7px;
+  border-radius: 5px;
+  background: var(--thu-fg);
+  color: var(--thu-bg);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.35;
+  white-space: nowrap;
+  box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
+  opacity: 0;
+  transform: translate(-50%, -3px);
+  /* Never a click target: it sits under the pointer that summoned it. */
+  pointer-events: none;
+  transition: opacity 90ms ease, transform 90ms ease;
+}
+.tb-btn:hover .tb-tip,
+.tb-btn:focus-visible .tb-tip {
+  opacity: 1;
+  transform: translate(-50%, 0);
+}
+@media (prefers-reduced-motion: reduce) {
+  .tb-tip { transition: none; }
+}
 
 /* Screen-reader-only live region for state announcements. */
 .sr {
@@ -211,7 +314,7 @@ export const PIN_CSS = `
   font-weight: 700;
   font-variant-numeric: tabular-nums;
   color: #fff;
-  background: var(--thu-fg-dim);
+  background: var(--thu-pin-fill, var(--thu-fg-dim));
   box-shadow: 0 1px 4px rgba(0, 0, 0, 0.35);
   pointer-events: auto;
   cursor: pointer;
@@ -226,15 +329,42 @@ export const PIN_CSS = `
  * content stylesheet is injected into pages whose custom properties are not
  * ours to read.
  */
-.pin[data-severity="critical"] { background: #b31038; }
-.pin[data-severity="high"]     { background: #a04a10; }
-.pin[data-severity="medium"]   { background: #7d5a00; }
-.pin[data-severity="low"]      { background: #2f5fb5; }
-.pin[data-severity="info"]     { background: #5c6270; }
+.pin[data-severity="critical"] { --thu-pin-fill: #b31038; }
+.pin[data-severity="high"]     { --thu-pin-fill: #a04a10; }
+.pin[data-severity="medium"]   { --thu-pin-fill: #7d5a00; }
+.pin[data-severity="low"]      { --thu-pin-fill: #2f5fb5; }
+.pin[data-severity="info"]     { --thu-pin-fill: #5c6270; }
+
+/*
+ * A pin keeps its own fill under the pointer.
+ *
+ * The fill is set as a custom property rather than as a background colour,
+ * because the toolbar's generic hover rule -- button:hover:not(:disabled) --
+ * is a type plus two pseudo-classes, which outranks a class plus an attribute.
+ * Without this, every pin dropped its colour for the toolbar's pale hover the
+ * moment the pointer touched it, taking the white ordinal on it down to
+ * invisible. Setting the property here and reading it back in one rule that
+ * outranks the generic one keeps the two systems from fighting.
+ *
+ * Found by looking at a screenshot with the pointer resting on a pin, which is
+ * where a pointer usually is when somebody is about to click one.
+ */
+.pin:hover:not(:disabled) { background: var(--thu-pin-fill, var(--thu-fg-dim)); }
 
 /* The "display: grid" above beats the user-agent [hidden] rule, so without
    this a pin whose element scrolled away keeps rendering at its last spot. */
 .pin[hidden] { display: none; }
+
+/*
+ * Comment pins are the user's own marks, not Thursday's measurements, so they
+ * are a different shape as well as a different colour: a squared-off pin in
+ * the accent teal, lettered rather than numbered. Shape carries the
+ * distinction for anyone who cannot tell the two fills apart.
+ */
+.pin[data-kind="comment"] {
+  --thu-pin-fill: #0f6b6b;
+  border-radius: 5px;
+}
 
 .pin[data-approximate="true"] { border-style: dashed; }
 
