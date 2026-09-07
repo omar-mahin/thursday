@@ -415,5 +415,38 @@ testWithHostAccess('no button is left permanently greyed out', async ({ openFixt
       .filter((button) => (button as HTMLButtonElement).disabled)
       .map((button) => button.getAttribute('aria-label'));
   });
-  expect(stuck).toEqual([]);
+  /*
+   * Comment, and only Comment.
+   *
+   * A comment is stored against the audit it was written on, so until there is
+   * one there is nowhere to put it. Leaving the button pressable was worse than
+   * greying it: the card opened, you typed, and only then were you told it
+   * could not be kept.
+   *
+   * The list is not the whole check. The rule this test exists to enforce is
+   * that a disabled button is a promise something will keep -- so the promise
+   * is kept below rather than asserted in a comment.
+   */
+  expect(stuck).toEqual(['Comment']);
+});
+
+testWithHostAccess('the one greyed-out button is enabled as soon as it can be', async ({
+  openFixture,
+  activate,
+  extensionId,
+  context,
+}) => {
+  const page = await openFixture('accessibility.html');
+  await activate(page);
+  const comment = toolbar(page).getByRole('button', { name: 'Comment' });
+  await expect(comment).toBeDisabled();
+
+  const panel = await context.newPage();
+  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await page.bringToFront();
+  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
+
+  // The promise, kept.
+  await expect(comment).toBeEnabled();
 });

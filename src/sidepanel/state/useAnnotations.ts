@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AnnotationTarget } from '../../shared/messaging/protocol';
-import type { Annotation, AnnotationAttachment } from '../../shared/types';
+import type { Annotation, AnnotationAttachment, AnnotationPriority } from '../../shared/types';
 import { newId } from '../../shared/utils/id';
 import { blobToDataUrl, dataUrlToBlob } from '../../shared/utils/base64';
 import {
@@ -11,7 +11,7 @@ import {
   saveAnnotation,
 } from '../../storage/annotations';
 import type { PdfImage } from '../../pdf/layout';
-import { IMAGE_REFUSALS, prepareImage, toPdfImage } from '../annotate/image';
+import { IMAGE_REFUSALS, prepareImage, toPdfImage } from '../../shared/media/image';
 
 export type AnnotationsState = {
   /** Oldest first: the order they were written is the order they read in. */
@@ -54,6 +54,10 @@ export type AnnotationSource = {
 /** What the compose box hands over. */
 export type NewAnnotation = {
   body: string;
+  /** What the author chose in the composer. */
+  priority?: AnnotationPriority;
+  /** Their name at the time they wrote it. */
+  author?: string;
   /** The element the user clicked, or null for a comment about the page. */
   target: AnnotationTarget | null;
   files: readonly File[];
@@ -93,7 +97,7 @@ const message = (error: unknown, fallback: string): string =>
  */
 export function useAnnotations(source: AnnotationSource | null): AnnotationsState & {
   add(input: NewAnnotation): Promise<boolean>;
-  edit(id: string, body: string): Promise<void>;
+  edit(id: string, body: string, priority?: AnnotationPriority): Promise<void>;
   attach(id: string, files: readonly File[]): Promise<void>;
   detach(annotationId: string, attachmentId: string): Promise<void>;
   remove(id: string): Promise<void>;
@@ -270,6 +274,11 @@ export function useAnnotations(source: AnnotationSource | null): AnnotationsStat
           createdAt: now,
           updatedAt: now,
         };
+        // Written only when there is something to write. An empty author or an
+        // absent priority stays absent rather than becoming '' or a default the
+        // user never picked.
+        if (input.priority) annotation.priority = input.priority;
+        if (input.author && input.author.trim() !== '') annotation.author = input.author.trim();
         if (input.target) {
           annotation.elementRef = input.target.reference;
           annotation.documentRect = input.target.documentRect;
@@ -303,12 +312,21 @@ export function useAnnotations(source: AnnotationSource | null): AnnotationsStat
   );
 
   const edit = useCallback(
-    async (id: string, body: string) => {
+    async (id: string, body: string, priority?: AnnotationPriority) => {
       const trimmed = body.trim();
       if (!trimmed) return;
       mutate((list) =>
         list.map((annotation) =>
-          annotation.id === id ? { ...annotation, body: trimmed, updatedAt: Date.now() } : annotation,
+          annotation.id === id
+            ? {
+                ...annotation,
+                body: trimmed,
+                // Left alone when the caller does not pass one, so editing the
+                // text of an old comment does not invent a priority for it.
+                ...(priority ? { priority } : {}),
+                updatedAt: Date.now(),
+              }
+            : annotation,
         ),
       );
       const target = listRef.current.find((annotation) => annotation.id === id);

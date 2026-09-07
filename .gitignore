@@ -2,6 +2,10 @@ node_modules/
 dist/
 dist-test/
 test-results/
+# Finder and some tooling create "test-results 2/" and the like when the
+# directory is recreated while it still exists; those are the same throwaway
+# Playwright output and must not be committed either.
+test-results*/
 playwright-report/
 *.log
 .DS_Store

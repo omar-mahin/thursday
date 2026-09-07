@@ -175,12 +175,21 @@ test('hover feedback lands within 100ms on a heavy page', async ({ openFixture, 
 
   const start = Date.now();
   await page.mouse.move(target.x + 4, target.y + 4);
+  /*
+   * The ruler's outline, not the plain highlight box.
+   *
+   * Select shows the ruler now, and this is the harder version of the same
+   * claim: the frame that draws this also reads computed styles, resolves the
+   * background through the ancestor chain and grades contrast. If any of that
+   * were done per pointer move rather than per element, this is the test that
+   * would notice.
+   */
   await page.waitForFunction(
     (expected) => {
       const box = document
         .querySelector('thursday-root')
-        ?.shadowRoot?.querySelector('.hl-box') as HTMLElement | null;
-      if (!box || box.style.display !== 'block') return false;
+        ?.shadowRoot?.querySelector('.rl-outline') as HTMLElement | null;
+      if (!box || box.dataset['on'] !== 'true') return false;
       const match = /translate3d\((-?[\d.]+)px, (-?[\d.]+)px/.exec(box.style.transform);
       return match !== null && Math.abs(Number(match[2]) - expected) < 2;
     },

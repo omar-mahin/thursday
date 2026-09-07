@@ -52,6 +52,8 @@ test('flow 1: activate, audit, read a finding, jump to it, resolve it, save the 
 
   // --- it jumps to the element -------------------------------------------
   await panel.locator('.detail').getByRole('button', { name: 'Show on page' }).click();
+  // Show on page flashes the plain highlight rather than starting the ruler:
+  // this is "here it is", not "measure this".
   await expect(page.locator('thursday-root .hl-box')).toBeVisible();
 
   // --- evidence, impact, recommendation ----------------------------------
@@ -112,7 +114,8 @@ test('flow 2: activate, select an element, read its contextual finding, add it t
   // The unlabelled image: something an audit has an opinion about.
   const target = page.locator('img').first();
   await target.hover();
-  await expect(page.locator('thursday-root .hl-box')).toBeVisible();
+  // Select draws the ruler, whose dashed outline is the mark on the element.
+  await expect(page.locator('thursday-root .rl-outline')).toHaveAttribute('data-on', 'true');
   await target.click({ position: { x: 5, y: 5 } });
 
   // --- its measured facts appear -----------------------------------------

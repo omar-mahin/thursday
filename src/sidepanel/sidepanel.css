@@ -358,6 +358,41 @@ button.icon:hover { color: var(--fg); background: none; }
 }
 
 /* -- comments ------------------------------------------------------------ */
+/*
+ * Priority, as the author set it.
+ *
+ * Outlined rather than filled, and never on the severity palette. A filled red
+ * chip next to a filled red severity badge invites a reader to weigh a comment
+ * and a measurement the same way, which is the one thing this product is built
+ * not to do.
+ */
+.comment-priority {
+  flex: none;
+  padding: 1px 7px;
+  border: 1px solid currentColor;
+  border-radius: 10px;
+  /* 12px, not 11: RESP-003 caught the first version of this chip on a 400px
+     panel, which is the width a docked side panel actually is. */
+  font-size: 12px;
+  font-weight: 600;
+}
+.comment-priority[data-level='medium'] { color: #8a6300; }
+.comment-priority[data-level='high'] { color: #c1123c; }
+
+.priority-row { display: flex; gap: 8px; margin: 8px 0 0; }
+.priority-pill {
+  flex: 1;
+  min-height: 32px;
+  border: 1px solid var(--line);
+  border-radius: 16px;
+  background: transparent;
+  font-weight: 600;
+  color: var(--fg-dim);
+}
+.priority-pill[aria-checked='true'] { border-color: currentColor; color: var(--fg); }
+.priority-pill[aria-checked='true'][data-level='medium'] { color: #8a6300; }
+.priority-pill[aria-checked='true'][data-level='high'] { color: #c1123c; }
+
 .comment-compose { margin-top: 8px; display: flex; flex-direction: column; gap: 6px; }
 .comment-compose textarea,
 .comment-row textarea {

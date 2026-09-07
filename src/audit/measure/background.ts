@@ -22,13 +22,29 @@ export type IndeterminateReason =
 
 const WHITE: Rgb = { r: 255, g: 255, b: 255, a: 1 };
 
-export function resolveBackground(snapshot: PageSnapshot, element: ElementSnapshot): BackgroundResult {
+/**
+ * The four style facts this resolver needs, whatever they were read from.
+ *
+ * Named separately so the live-DOM ruler and the snapshot-based rules run the
+ * *same* resolver. Two implementations would be two chances to disagree, and
+ * the disagreement would be user-visible: hovering an element and reading
+ * "AA passes" while the audit reports a contrast failure on that same element
+ * is a straight contradiction, and there would be no way to tell which half was
+ * lying.
+ */
+export type BackgroundLayer = {
+  backgroundColor: string;
+  hasBackgroundImage: boolean;
+  mixBlendMode: string;
+  hasBackdropFilter: boolean;
+};
+
+/** The ancestor chain, innermost first. */
+export function resolveBackgroundLayers(chain: Iterable<BackgroundLayer>): BackgroundResult {
   const stack: Rgb[] = [];
-  let current: ElementSnapshot | undefined = element;
   let layers = 0;
 
-  while (current) {
-    const styles = current.styles;
+  for (const styles of chain) {
     if (styles.hasBackgroundImage) {
       return { kind: 'indeterminate', reason: 'background-image' };
     }
@@ -55,8 +71,6 @@ export function resolveBackground(snapshot: PageSnapshot, element: ElementSnapsh
         return { kind: 'resolved', color: result, layers };
       }
     }
-
-    current = current.parent === null ? undefined : snapshot.elements[current.parent];
   }
 
   // Nothing opaque was found in the collected chain. The page canvas is white by
@@ -67,6 +81,19 @@ export function resolveBackground(snapshot: PageSnapshot, element: ElementSnapsh
     result = composite(stack[index]!, result);
   }
   return { kind: 'resolved', color: result, layers };
+}
+
+/** The snapshot's ancestor chain, as layers. */
+export function resolveBackground(snapshot: PageSnapshot, element: ElementSnapshot): BackgroundResult {
+  return resolveBackgroundLayers(
+    (function* chain() {
+      let current: ElementSnapshot | undefined = element;
+      while (current) {
+        yield current.styles;
+        current = current.parent === null ? undefined : snapshot.elements[current.parent];
+      }
+    })(),
+  );
 }
 
 export const INDETERMINATE_EXPLANATION: Record<IndeterminateReason, string> = {

@@ -77,6 +77,35 @@ async function inkOnPage(context: BrowserContext, shot: Buffer): Promise<{ sheet
   }
 }
 
+
+/**
+ * Writes a comment in the card on the page, which is where the composer lives.
+ *
+ * The panel is a real tab here rather than a docked side panel, so only one of
+ * the two can take real clicks at a time -- hence the shuffling.
+ */
+async function comment(
+  page: Page,
+  panel: Page,
+  text: string,
+  files?: string,
+  priority?: 'medium' | 'high',
+): Promise<void> {
+  await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
+  await page.bringToFront();
+  const card = page.locator('thursday-root .cm-card');
+  await expect(card).toBeVisible();
+  if (priority) await page.locator(`thursday-root .cm-priority[data-level="${priority}"]`).click();
+  await page.locator('thursday-root .cm-body').fill(text);
+  if (files) await page.locator('thursday-root input[type="file"]').setInputFiles(files);
+  await page.locator('thursday-root .cm-add').click();
+  await expect(card).toBeHidden({ timeout: 15_000 });
+  await panel.bringToFront();
+}
+
 test('the PDF export is a file a real reader renders', async ({
   openFixture,
   activate,
@@ -145,9 +174,7 @@ test('the PDF carries the findings, the notes and the comments', async ({
   await panel.locator('.detail-note textarea').fill('Raised with the design team');
   await panel.locator('.detail-title').click();
 
-  await panel.getByLabel('Comment', { exact: true }).fill('The form asks for the same thing twice.');
-  await panel.getByLabel('Attach images to this comment').setInputFiles(IMAGE);
-  await panel.getByRole('button', { name: 'Add comment' }).click();
+  await comment(page, panel, 'The form asks for the same thing twice.', IMAGE, 'high');
   await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
   const download = await Promise.all([
@@ -167,6 +194,9 @@ test('the PDF carries the findings, the notes and the comments', async ({
   expect(drawn).toContain('The form asks for the same thing twice.');
   expect(drawn).toContain('COMMENTS');
   expect(drawn).toContain('observations and opinions, not measurements');
+  // The author's own priority, in the author's own words, kept off the
+  // severity ladder that findings sit on.
+  expect(drawn).toContain('High priority');
 
   // The attached image is embedded as JPEG through DCTDecode, and there is
   // nothing in the file that points anywhere else.
@@ -189,8 +219,7 @@ test('the PDF names the characters it could not draw instead of mangling them', 
   await expect(panel.locator('.finding-row').first()).toBeVisible();
 
   // A comment in a script the base-14 fonts have no glyphs for.
-  await panel.getByLabel('Comment', { exact: true }).fill('価格表が読めない');
-  await panel.getByRole('button', { name: 'Add comment' }).click();
+  await comment(page, panel, '価格表が読めない');
   await expect(panel.locator('.comment-row')).toHaveCount(1);
 
   const download = await Promise.all([

@@ -47,7 +47,9 @@ Thursday
 > dismissed.
 >
 > Add your own comments too. Click any element and write what you think, attach
-> screenshots to it, or leave a note about the page as a whole. Comments are
+> screenshots to it, or leave a note about the page as a whole. The card opens
+> on the page next to what you picked, and each comment carries your name and a
+> priority you set yourself. Comments are
 > kept separate from findings everywhere they appear — lettered rather than
 > numbered, in their own section of the report, labelled as opinions — because
 > what you think and what was measured are different kinds of claim and should

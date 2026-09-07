@@ -13,7 +13,7 @@ import { CLEARED_AT_KEY, deleteScreenshot, putScreenshot, screenshotsFor } from 
 import { getSetting } from '../../storage/settings';
 import { blobToDataUrl } from '../../shared/utils/base64';
 import type { PdfImage } from '../../pdf/layout';
-import { toPdfImage } from '../annotate/image';
+import { toPdfImage } from '../../shared/media/image';
 
 export type ShotState = {
   /** findingId -> object URL, for showing the crop in the panel. */

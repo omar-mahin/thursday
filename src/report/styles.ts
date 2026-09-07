@@ -5,6 +5,20 @@
  * machine with no network, which is the point of it being a single file.
  */
 export const REPORT_CSS = `
+/* A comment's priority and its author. Outlined, never on the severity
+   palette: an opinion and a measurement must not read as the same weight. */
+.finding.comment .priority {
+  margin-left: auto;
+  padding: 1px 8px;
+  border: 1px solid currentColor;
+  border-radius: 10px;
+  font-size: 12px;
+  font-weight: 600;
+}
+.finding.comment .priority[data-level="medium"] { color: var(--medium); }
+.finding.comment .priority[data-level="high"] { color: var(--critical); }
+.finding.comment .byline { margin: 0 0 6px; font-size: 13px; font-weight: 600; color: var(--dim); }
+
 :root {
   --fg: #16181d;
   --dim: #5b6270;

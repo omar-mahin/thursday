@@ -32,6 +32,17 @@
       #s4 { background: #f4fff2; }
       #s5 { background: #faf2ff; }
       .faint { color: #a0a0a0; }
+      /*
+        A translucent stack, for the ruler-versus-audit cross-check.
+
+        The point is that "assume the page is white" gives a different answer
+        here from compositing the layers: two 50% black veils over #f2f6ff make
+        a mid grey, and #767676 text on it fails where the same text on white
+        passes. A resolver that guesses white would call this a pass, so this is
+        the case that can tell a shared resolver from two similar ones.
+      */
+      .veil { background: rgba(0, 0, 0, 0.5); padding: 12px; }
+      .stacked { color: #767676; margin: 0; }
       .tiny { width: 18px; height: 18px; padding: 0; font-size: 11px; }
       input { min-height: 32px; width: 260px; font-size: 16px; }
     </style>
@@ -56,6 +67,11 @@
         <!-- A11Y-002: no label -->
         <input type="text" name="fullname" />
       </form>
+      <div class="veil">
+        <div class="veil">
+          <p class="stacked">Text on two translucent layers over a tinted section.</p>
+        </div>
+      </div>
     </section>
 
     <section id="s4">

@@ -157,12 +157,30 @@ test('the side panel passes its own thirty rules', async ({
   await panel.locator('.finding-row').first().click();
   await expect(panel.locator('.detail')).toBeVisible();
 
-  await panel.getByLabel('Comment', { exact: true }).fill('The label sits too close to the field.');
-  await panel
-    .getByLabel('Attach images to this comment')
+  /*
+   * Written in the card on the page, which is where the composer is now.
+   *
+   * Given a priority on purpose: the panel's priority chip is part of the
+   * newest UI and would otherwise be the one piece of it never audited. It is
+   * the panel that gets audited here, not the card -- the card lives in a
+   * shadow root on somebody else's page and is covered by comments.spec.
+   */
+  await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+    timeout: 60_000,
+  });
+  await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
+  await seed.bringToFront();
+  await expect(seed.locator('thursday-root .cm-card')).toBeVisible();
+  await seed.locator('thursday-root .cm-priority[data-level="high"]').click();
+  await seed.locator('thursday-root .cm-body').fill('The label sits too close to the field.');
+  await seed
+    .locator('thursday-root input[type="file"]')
     .setInputFiles(resolve('tests/fixtures/annotation-image.png'));
-  await panel.getByRole('button', { name: 'Add comment' }).click();
+  await seed.locator('thursday-root .cm-add').click();
+  await expect(seed.locator('thursday-root .cm-card')).toBeHidden({ timeout: 15_000 });
+  await panel.bringToFront();
   await expect(panel.locator('.attach-grid img')).toHaveCount(1);
+  await expect(panel.locator('.comment-priority')).toHaveText('High');
 
   const html = inlineStyles(await panel.content());
   await panel.close();

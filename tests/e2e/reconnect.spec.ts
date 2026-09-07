@@ -104,3 +104,125 @@ test('a capture that gets no answer gives up and says why', async ({
   });
   await expect(panel.locator('.detail').getByRole('button', { name: 'Capturing' })).toHaveCount(0);
 });
+
+test('a comment written after the worker is collected still lands', async ({
+  openFixture,
+  activate,
+  extensionId,
+  context,
+}) => {
+  /*
+   * The other direction of the same bug.
+   *
+   * The panel's port was fixed first; the content script's was not, and its
+   * `post` swallowed the failure with a comment claiming the reconnect handled
+   * it -- true of the port, false of the message. So the first thing sent after
+   * a worker was collected vanished, and for a comment that meant a card stuck
+   * at "Adding..." with somebody's words trapped behind a disabled button.
+   */
+  const page = await openFixture('accessibility.html');
+  await activate(page);
+  const panel = await openPanel(context, extensionId);
+
+  await page.bringToFront();
+  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
+  await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+    timeout: 60_000,
+  });
+
+  /*
+   * Order matters, and getting it wrong made this test worthless once already.
+   *
+   * The card is opened and filled *first*, and the worker killed last, so that
+   * pressing Add is the very next thing to happen. Killing it before all that
+   * setup left the reconnect (250ms) plenty of time to complete before the
+   * submission went out, so nothing was ever in flight over a dead port and
+   * the test passed with the outbox torn out -- verified by tearing it out.
+   *
+   * This is also the realistic sequence: the card is open while somebody types,
+   * which is exactly when an idle worker gets collected.
+   */
+  await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
+  await page.bringToFront();
+  const card = page.locator('thursday-root .cm-card');
+  await expect(card).toBeVisible();
+  await page.locator('thursday-root .cm-body').fill('Written after the worker died.');
+
+  await killWorker(context, page);
+  await page.locator('thursday-root .cm-add').click();
+
+  // Closes only when the panel has stored it and said so.
+  await expect(card).toBeHidden({ timeout: 20_000 });
+  await panel.bringToFront();
+  await expect(panel.locator('.comment-body')).toHaveText('Written after the worker died.');
+  // Once, not twice. The page resends until it is acknowledged, so this is the
+  // assertion that the resending cannot produce a second comment.
+  await expect(panel.locator('.comment-row')).toHaveCount(1);
+});
+
+test('a comment with nothing listening gives up and keeps what was written', async ({
+  openFixture,
+  activate,
+  extensionId,
+  context,
+}) => {
+  /*
+   * The safety net. The panel can simply be closed, and then nothing is at the
+   * other end of the round trip at all -- no reconnect helps with that. The
+   * card has to be able to give up, say so, and still be holding the words.
+   */
+  const page = await openFixture('accessibility.html');
+  await activate(page);
+  const panel = await openPanel(context, extensionId);
+
+  await page.bringToFront();
+  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
+  await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+    timeout: 60_000,
+  });
+
+  await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
+  await page.bringToFront();
+  await expect(page.locator('thursday-root .cm-card')).toBeVisible();
+  await page.locator('thursday-root .cm-body').fill('Nobody is listening to this.');
+
+  // The only listener, gone.
+  await panel.close();
+  await page.locator('thursday-root .cm-add').click();
+
+  await expect(page.locator('thursday-root .cm-error')).toContainText('No answer from the panel', {
+    timeout: 20_000,
+  });
+  // Not still claiming to be working, and the words are still there.
+  await expect(page.locator('thursday-root .cm-add')).toHaveText('Add');
+  await expect(page.locator('thursday-root .cm-add')).toBeEnabled();
+  await expect(page.locator('thursday-root .cm-body')).toHaveValue('Nobody is listening to this.');
+});
+
+test('Comment is not pressable until there is an audit to attach one to', async ({
+  openFixture,
+  activate,
+  extensionId,
+  context,
+}) => {
+  /*
+   * The dead end this replaced: the button was pressable, the card opened, you
+   * typed, and only then were you told it could not be kept. Same mistake the
+   * greyed-out Report button was, with the added insult of having written
+   * something first.
+   */
+  const page = await openFixture('accessibility.html');
+  await activate(page);
+
+  const comment = page.locator('thursday-root [data-action="comment"]');
+  await expect(comment).toBeDisabled();
+
+  const panel = await openPanel(context, extensionId);
+  await page.bringToFront();
+  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
+
+  await expect(comment).toBeEnabled();
+});

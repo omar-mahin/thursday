@@ -2,6 +2,7 @@ import { CATEGORY_LABELS } from '../audit/engine/registry';
 import { SEVERITY_LABELS } from '../audit/engine/severity';
 import { countBySeverity } from '../audit/engine/run';
 import { commentLabel } from '../shared/utils/labels';
+import { PRIORITY_LABELS } from '../shared/constants/priority';
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from '../shared/constants/product';
 import type { Annotation, Audit, Finding, PageSnapshotDigest, Severity } from '../shared/types';
 import { escapeHtml, safeImageSource, safeLink } from './escape';
@@ -162,7 +163,15 @@ function renderComment(annotation: Annotation, ordinal: number, input: ReportInp
   <div class="finding-head">
     <span class="sev" data-kind="comment">${escapeHtml(marker)}</span>
     <h3>Comment ${escapeHtml(marker)}</h3>
+    ${
+      annotation.priority && annotation.priority !== 'normal'
+        ? `<span class="priority" data-level="${escapeHtml(annotation.priority)}">${escapeHtml(
+            PRIORITY_LABELS[annotation.priority],
+          )}</span>`
+        : ''
+    }
   </div>
+  ${annotation.author ? `<p class="byline">${escapeHtml(annotation.author)}</p>` : ''}
   <p class="body">${paragraphs(annotation.body)}</p>
   ${images}
   <div class="where">${

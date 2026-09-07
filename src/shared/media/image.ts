@@ -1,6 +1,13 @@
 /**
  * Preparing an image the user attached to a comment.
  *
+ * Shared rather than panel-local, because both sides need it: the on-page
+ * composer prepares an image before sending it to the panel (runtime messaging
+ * is JSON, so the bytes travel as a data URL and an untouched photo would be a
+ * 27MB string in one message), and the panel prepares the ones added later. Two
+ * copies would be two sets of refusals and two answers to what happens to
+ * transparency.
+ *
  * Everything here happens before a single byte reaches storage, because the
  * file a person drags in is whatever their screenshot tool produced -- a 4MB
  * 5120px retina PNG is completely normal, and half a dozen of those in one

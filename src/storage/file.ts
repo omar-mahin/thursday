@@ -4,6 +4,7 @@ import {
   PRODUCT_NAME,
   PRODUCT_SLUG,
 } from '../shared/constants/product';
+import { isAnnotationPriority } from '../shared/constants/priority';
 import type {
   Annotation,
   AnnotationAttachment,
@@ -383,6 +384,12 @@ function annotation(value: unknown, auditId: string): Annotation | null {
     result.snapshotId = snapshotId;
   }
   if (isObject(value['documentRect'])) result.documentRect = rect(value['documentRect']);
+  // Both optional and both checked. A priority that is not one of the three is
+  // dropped rather than carried in as a string nothing knows how to render, and
+  // an author is capped like every other free-text field in this file.
+  if (isAnnotationPriority(value['priority'])) result.priority = value['priority'];
+  const author = str(value['author']).slice(0, 120);
+  if (author) result.author = author;
   return result;
 }
 

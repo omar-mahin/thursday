@@ -35,14 +35,16 @@ export function Options(): React.ReactElement {
 
   useEffect(() => {
     void (async () => {
-      const [theme, minTouchTarget, toolbarPosition, keepHistory, captureScreenshots] = await Promise.all([
-        getSetting('theme'),
-        getSetting('minTouchTarget'),
-        getSetting('toolbarPosition'),
-        getSetting('keepHistory'),
-        getSetting('captureScreenshots'),
-      ]);
-      setSettings({ theme, minTouchTarget, toolbarPosition, keepHistory, captureScreenshots });
+      const [authorName, theme, minTouchTarget, toolbarPosition, keepHistory, captureScreenshots] =
+        await Promise.all([
+          getSetting('authorName'),
+          getSetting('theme'),
+          getSetting('minTouchTarget'),
+          getSetting('toolbarPosition'),
+          getSetting('keepHistory'),
+          getSetting('captureScreenshots'),
+        ]);
+      setSettings({ authorName, theme, minTouchTarget, toolbarPosition, keepHistory, captureScreenshots });
     })();
   }, []);
 
@@ -61,6 +63,29 @@ export function Options(): React.ReactElement {
           Everything here is stored on this machine only.
         </p>
       </header>
+
+      <section className="card">
+        {/* First, because it is the only setting here that is about the person
+            rather than about the audit. */}
+        <div className="section-title">You</div>
+        <div className="field">
+          <div>
+            <div className="field-label">Your name</div>
+            <div className="hint">
+              Goes on the comments you write, so a report says whose opinion each one is. Stored on this
+              machine. {PRODUCT_NAME} has no accounts and never sends it anywhere.
+            </div>
+          </div>
+          <input
+            type="text"
+            aria-label="Your name"
+            placeholder="Nobody yet"
+            value={settings.authorName}
+            onChange={(event) => update('authorName', event.currentTarget.value)}
+            style={{ width: 180 }}
+          />
+        </div>
+      </section>
 
       <section className="card">
         <div className="section-title">Audit thresholds</div>

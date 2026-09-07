@@ -1,15 +1,19 @@
 import {
   expect,
   highlightBox,
-  highlightLabel,
   testWithHostAccess as test,
   toolbar,
 } from './fixtures';
 
-test('hovering highlights the element under the pointer and reports its size', async ({
+test('hovering marks the element under the pointer and reports its size', async ({
   openFixture,
   activate,
 }) => {
+  /*
+   * Select shows the ruler, so the mark is the ruler's dashed outline and the
+   * size is a chip in its bar. The plain highlight box is still what Comment
+   * mode draws -- one outline, not two -- and has its own test in ruler.spec.
+   */
   const page = await openFixture('inspect.html');
   await activate(page);
 
@@ -20,14 +24,14 @@ test('hovering highlights the element under the pointer and reports its size', a
   const target = (await cta.boundingBox())!;
   await page.mouse.move(target.x + target.width / 2, target.y + target.height / 2);
 
-  await expect(highlightBox(page)).toBeVisible();
-  await expect(highlightLabel(page)).toContainText('button#start-trial');
-  await expect(highlightLabel(page)).toContainText(
-    `${Math.round(target.width)} × ${Math.round(target.height)}`,
+  const outline = page.locator('thursday-root .rl-outline');
+  await expect(outline).toHaveAttribute('data-on', 'true');
+  await expect(page.locator('thursday-root .rl-hud')).toContainText(
+    `${Math.round(target.width)}×${Math.round(target.height)}`,
   );
 
   // The overlay tracks the element, not the pointer.
-  const box = (await highlightBox(page).boundingBox())!;
+  const box = (await outline.boundingBox())!;
   expect(Math.abs(box.x - target.x)).toBeLessThan(2);
   expect(Math.abs(box.y - target.y)).toBeLessThan(2);
   expect(Math.abs(box.width - target.width)).toBeLessThan(2);

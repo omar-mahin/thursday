@@ -5,6 +5,17 @@ import { STORAGE_KEY_PREFIX } from '../shared/constants/product';
 export type ToolbarPosition = { x: number; y: number };
 
 export type Settings = {
+  /**
+   * The name that goes on comments.
+   *
+   * Typed by the user, kept on this machine, and never used to identify them
+   * to anything: there are no accounts in this product and this is not one. It
+   * exists so a report handed to a client says whose opinion each comment is.
+   *
+   * Empty until they fill it in, and a comment written before then simply has
+   * no author rather than a made-up one.
+   */
+  authorName: string;
   toolbarPosition: ToolbarPosition | null;
   theme: 'system' | 'dark' | 'light';
   minTouchTarget: number;
@@ -38,6 +49,7 @@ export type Settings = {
 };
 
 export const DEFAULT_SETTINGS: Settings = {
+  authorName: '',
   toolbarPosition: null,
   theme: 'system',
   minTouchTarget: 44,

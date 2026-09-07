@@ -1,11 +1,23 @@
 import { assertNever } from '../shared/result';
-import type { CaptureTarget, Envelope, ThursdayMessage, ToolbarAction } from '../shared/messaging/protocol';
+import type {
+  AnnotationTarget,
+  CaptureTarget,
+  Envelope,
+  SubmittedImage,
+  ThursdayMessage,
+  ToolbarAction,
+} from '../shared/messaging/protocol';
 import { isEnvelope } from '../shared/messaging/protocol';
 import type { ElementReference, Pin, Rect, ResolutionLevel, Viewport } from '../shared/types';
 import { describeElement, resolveReference } from '../audit/element/identity';
 import { getSetting, setSetting } from '../storage/settings';
 import { createHost, type ShadowHost } from './host';
 import { createHighlight, describeForLabel, type Highlight } from './overlay/highlight';
+import { createRuler, type Ruler } from './overlay/ruler';
+import { createComposer, type Composer } from './annotate/composer';
+import { IMAGE_REFUSALS, prepareImage } from '../shared/media/image';
+import { blobToDataUrl } from '../shared/utils/base64';
+import { newId } from '../shared/utils/id';
 import { createSelection, type Selection } from './selector/selection';
 import { createPinLayer, type PinLayer } from './pins/pins';
 import { resolvePinTargets } from './pins/resolve';
@@ -24,6 +36,46 @@ import { createToolbar, type Toolbar } from './toolbar/toolbar';
  * which dies halfway is a flicker rather than an extension that has vanished.
  */
 const OVERLAY_RESTORE_MS = 2500;
+
+/**
+ * Messages worth sending late, and how long they stay worth sending.
+ *
+ * Everything the user did deliberately is here: a comment they wrote, an
+ * element they picked, a button they pressed. What is missing is the traffic
+ * that describes a moment rather than an action -- a hover at frame rate, an
+ * echo of which mode is on, an answer to a capture request that has its own
+ * deadline. Replaying those would fill the queue with things nobody is waiting
+ * for and, in the capture case, answer a question that has already been
+ * abandoned.
+ */
+const REPLAYABLE = new Set<ThursdayMessage['type']>([
+  'PAGE_ACTIVATED',
+  'DEACTIVATED',
+  'ELEMENT_SELECTED',
+  'SNAPSHOT_READY',
+  'PIN_CLICKED',
+  'ELEMENT_RESOLVED',
+  'ELEMENT_RECT',
+  'ANNOTATION_TARGET',
+  'ANNOTATION_SUBMITTED',
+  'TOOLBAR_ACTION',
+  'ERROR',
+]);
+const OUTBOX_LIMIT = 20;
+const OUTBOX_MAX_AGE_MS = 4000;
+
+/**
+ * How long the comment card waits for the panel to say it stored the comment.
+ *
+ * Generous, because the panel may be waking a service worker, opening a
+ * database and re-encoding images on the way -- and this is a person watching a
+ * button, so a false "no answer" is worse than a slow one. What it must not do
+ * is wait forever.
+ */
+const SUBMIT_TIMEOUT_MS = 10_000;
+
+/** How often to resend a comment the panel has not acknowledged. */
+const SUBMIT_RETRY_MS = 1200;
 
 /**
  * Injected on demand by chrome.scripting.executeScript. The user *will* click
@@ -67,6 +119,12 @@ function install(): void {
   let host: ShadowHost | null = null;
   let toolbar: Toolbar | null = null;
   let highlight: Highlight | null = null;
+  let ruler: Ruler | null = null;
+  let composer: Composer | null = null;
+  /** The element the open card is about. */
+  let pendingTarget: AnnotationTarget | null = null;
+  /** The name the composer shows and stamps on a comment. */
+  let authorName = '';
   let selection: Selection | null = null;
   let pins: PinLayer | null = null;
   /** Live elements from the most recent snapshot, index-aligned with it. */
@@ -75,6 +133,21 @@ function install(): void {
   let measuredSnapshotId: string | null = null;
   /** Pending restore of the overlay after a capture. See captureBand. */
   let overlayTimer: number | null = null;
+  /** Messages waiting for a port. See post(). */
+  const outbox: { at: number; message: ThursdayMessage }[] = [];
+  /** The comment being submitted, until the panel acknowledges it. */
+  let pending: ThursdayMessage | null = null;
+  /** Deadline and retry for that comment. */
+  let submitTimer: number | null = null;
+  let retryTimer: number | null = null;
+
+  const stopSubmitting = (): void => {
+    pending = null;
+    if (submitTimer !== null) clearTimeout(submitTimer);
+    submitTimer = null;
+    if (retryTimer !== null) clearInterval(retryTimer);
+    retryTimer = null;
+  };
   let port: chrome.runtime.Port | null = null;
   /** The live element behind the current selection. Held directly, never
    *  re-queried, so identity cannot drift during a session. */
@@ -90,11 +163,43 @@ function install(): void {
   let reconnectAttempts = 0;
   let disposed = false;
 
+  /**
+   * Sends to the panel, holding the message when there is nothing to send over.
+   *
+   * The holding is the point, and it was missing. This used to swallow the
+   * failure with a comment saying the reconnect path handled it -- which was
+   * true of the *port* and false of the message. An MV3 worker is collected
+   * after a few minutes; the first thing sent afterwards discovers that and,
+   * before this, vanished. For a hover that is nothing. For a comment somebody
+   * had just written and pressed Add on, it was a card stuck at "Adding..."
+   * with their words in it and no way to get them out.
+   *
+   * The panel has the same arrangement in the other direction. This is the same
+   * lesson, applied to the half of the round trip that did not have it.
+   */
   const post = (message: ThursdayMessage): void => {
-    try {
-      port?.postMessage({ from: 'content', message } satisfies Envelope);
-    } catch {
-      /* worker asleep; the reconnect path below handles it */
+    if (port) {
+      try {
+        port.postMessage({ from: 'content', message } satisfies Envelope);
+        return;
+      } catch {
+        // A port whose worker has gone throws on use. onDisconnect is already
+        // on its way with a reconnect; hold this and let the flush send it.
+        port = null;
+      }
+    }
+    if (!REPLAYABLE.has(message.type)) return;
+    if (outbox.length >= OUTBOX_LIMIT) outbox.shift();
+    outbox.push({ at: Date.now(), message });
+  };
+
+  /** Sends anything held while the port was down. */
+  const flush = (): void => {
+    const held = outbox.splice(0, outbox.length);
+    const now = Date.now();
+    for (const entry of held) {
+      if (now - entry.at > OUTBOX_MAX_AGE_MS) continue;
+      post(entry.message);
     }
   };
 
@@ -119,9 +224,35 @@ function install(): void {
       case 'CANCEL_SELECTION':
       case 'CANCEL_ANNOTATION':
         selection?.cancel();
+        composer?.close();
+        return;
+      case 'COMMENTS_READY':
+        toolbar?.setEnabled('comment', message.payload.ready);
+        // A card already open stays open: the audit going away underneath it
+        // is not a reason to throw away what somebody is in the middle of
+        // writing, and the save will say so if it cannot be kept.
+        return;
+      case 'ANNOTATION_SAVED':
+        stopSubmitting();
+        if (message.payload.ok) {
+          pendingTarget = null;
+          composer?.setBusy(false);
+          composer?.close();
+        }
+        else {
+          composer?.setBusy(false);
+          composer?.fail(message.payload.detail);
+        }
         return;
       case 'START_ANNOTATION':
-        startPicking('comment');
+        if (message.payload.anchored) startPicking('comment');
+        else {
+          // No element to pick, so the card opens over the middle of the
+          // viewport rather than next to something.
+          pendingTarget = null;
+          showOverlay();
+          composer?.open({ x: window.innerWidth / 2 - 160, y: window.innerHeight / 3, width: 0, height: 0 });
+        }
         return;
       case 'REQUEST_SNAPSHOT':
         sendSnapshot(message.payload.includeOffscreen);
@@ -161,6 +292,7 @@ function install(): void {
       case 'ELEMENT_RESOLVED':
       case 'ELEMENT_RECT':
       case 'BAND_READY':
+      case 'ANNOTATION_SUBMITTED':
       case 'TOOLBAR_ACTION':
       case 'ERROR':
         return;
@@ -187,7 +319,9 @@ function install(): void {
 
   const startPicking = (purpose: 'inspect' | 'comment'): void => {
     picking = purpose;
-    selection?.start();
+    // The ruler is for inspecting. Picking somewhere to leave a comment is a
+    // question about which element, and a measurement bar over it is noise.
+    selection?.start({ measure: purpose === 'inspect' });
   };
 
   /**
@@ -199,23 +333,32 @@ function install(): void {
    * saw, absent when it is not, and absent is a perfectly ordinary answer: a
    * comment can be about a element no rule ever looked at.
    */
+  /**
+   * The user picked something to comment on: open the card next to it.
+   *
+   * ANNOTATION_TARGET still goes to the panel, because the panel draws the pin
+   * and wants to know the anchor immediately -- but the writing happens here,
+   * beside the element, rather than in a box the user has to look away to find.
+   */
   const emitAnnotationTarget = (element: Element): void => {
     const rect = toRect(element.getBoundingClientRect());
     const index = measured.indexOf(element);
-    post({
-      type: 'ANNOTATION_TARGET',
-      payload: {
-        reference: describeElement(element, rect),
-        documentRect: {
-          x: rect.x + window.scrollX,
-          y: rect.y + window.scrollY,
-          width: rect.width,
-          height: rect.height,
-        },
-        ...(index >= 0 ? { elementIndex: index } : {}),
+    const target = {
+      reference: describeElement(element, rect),
+      documentRect: {
+        x: rect.x + window.scrollX,
+        y: rect.y + window.scrollY,
+        width: rect.width,
+        height: rect.height,
       },
-    });
-    toolbar?.announce(`Comment anchored to ${describeForLabel(element).selector}.`);
+      ...(index >= 0 ? { elementIndex: index } : {}),
+      ...(index >= 0 && measuredSnapshotId !== null ? { snapshotId: measuredSnapshotId } : {}),
+    };
+    post({ type: 'ANNOTATION_TARGET', payload: target });
+    pendingTarget = target;
+    showOverlay();
+    composer?.open(rect);
+    toolbar?.announce(`Comment anchored to ${describeForLabel(element).selector}. Write it in the card.`);
   };
 
   const emitSelection = (element: Element): void => {
@@ -281,6 +424,24 @@ function install(): void {
    * are small next to pages, and it is exact: a field that appeared after the
    * snapshot was taken still gets covered.
    */
+  /**
+   * Brings Thursday back on screen and cancels any pending restore.
+   *
+   * Needed because the screenshot sweep takes the whole overlay off the page
+   * for a couple of seconds, and the comment card lives on that overlay. Open
+   * a card during a sweep and it was there, focused, taking keystrokes, and
+   * invisible.
+   *
+   * The trade is deliberate: a capture taken in the moment after a card opens
+   * may contain the card. That is a blemish on one screenshot. The alternative
+   * was a dialog the user cannot see.
+   */
+  const showOverlay = (): void => {
+    if (overlayTimer !== null) clearTimeout(overlayTimer);
+    overlayTimer = null;
+    host?.setVisible(true);
+  };
+
   const viewportMasks = (): Rect[] => {
     const height = window.innerHeight;
     const width = window.innerWidth;
@@ -489,7 +650,10 @@ function install(): void {
       reconnectAttempts += 1;
       setTimeout(() => {
         connect();
-        if (port) announceActivation();
+        if (port) {
+          announceActivation();
+          flush();
+        }
       }, 250 * reconnectAttempts);
     });
     reconnectAttempts = 0;
@@ -514,9 +678,12 @@ function install(): void {
     if (disposed) return;
     disposed = true;
     if (overlayTimer !== null) clearTimeout(overlayTimer);
+    stopSubmitting();
     post({ type: 'DEACTIVATED' });
     pins?.destroy();
     selection?.destroy();
+    composer?.destroy();
+    ruler?.destroy();
     highlight?.destroy();
     toolbar?.destroy();
     host?.destroy();
@@ -531,10 +698,116 @@ function install(): void {
 
   host = createHost();
   highlight = createHighlight(host.layer);
+  // The ruler asks where the toolbar is so its chips do not end up underneath
+  // it, which is otherwise the normal case for anything near the top of a page.
+  /*
+   * The composer. Created once, up front, rather than on first use: it holds
+   * the author's name, which comes from storage, and building it lazily would
+   * mean the first card of a session opens with the name missing and then
+   * filling in.
+   */
+  composer = createComposer(host.layer, {
+    onCancel: () => {
+      pendingTarget = null;
+      stopSubmitting();
+      composer?.close();
+    },
+    onRename: (name) => void setSetting('authorName', name),
+    onSubmit: (submission) => {
+      // No target is a comment about the page as a whole, which is a real
+      // thing to write rather than a missing anchor.
+      const target = pendingTarget;
+      composer?.setBusy(true);
+      void (async () => {
+        /*
+         * Images are downscaled here, before they cross to the panel.
+         *
+         * Runtime messaging is JSON, so a Blob cannot travel and the bytes have
+         * to go as a data URL. Sending an untouched 20MB photo that way would
+         * be a 27MB string in a single message; prepared first, the same photo
+         * is a couple of hundred kilobytes. Same code the panel uses, so the
+         * refusals and the transparency handling are not reimplemented.
+         */
+        const images: SubmittedImage[] = [];
+        for (const file of submission.files) {
+          const prepared = await prepareImage(file);
+          if (!prepared.ok) {
+            composer?.setBusy(false);
+            composer?.fail(IMAGE_REFUSALS[prepared.reason]);
+            return;
+          }
+          images.push({
+            name: file.name,
+            mime: prepared.image.mime,
+            dataUrl: await blobToDataUrl(prepared.image.blob),
+          });
+        }
+        /*
+         * Sent, and sent again until the panel says it has it.
+         *
+         * One send was not enough, and the way it failed is worth recording.
+         * Holding the message across a reconnect covers "no port to the
+         * worker" -- but after a worker restarts, the panel reconnects
+         * independently, and a message forwarded before it does is forwarded to
+         * nobody. Two reconnects racing, and under load the page won. Retrying
+         * removes the race instead of hoping it lands the right way.
+         */
+        pending = {
+          type: 'ANNOTATION_SUBMITTED',
+          payload: {
+            submissionId: newId(),
+            target,
+            body: submission.body,
+            priority: submission.priority,
+            author: authorName,
+            images,
+          },
+        };
+        post(pending);
+        if (retryTimer !== null) clearInterval(retryTimer);
+        retryTimer = window.setInterval(() => {
+          if (pending) post(pending);
+        }, SUBMIT_RETRY_MS);
+
+        /*
+         * A deadline, because there is a panel at the other end of this and it
+         * might not be there.
+         *
+         * The card said "Adding..." indefinitely if no answer came back: no
+         * error, no way to retry, and the words the user had just written
+         * trapped behind a disabled button. The message is held and resent
+         * across a reconnect now, but the side panel can also simply be closed,
+         * and then nothing is listening at all -- so the card has to be able to
+         * give up and say so.
+         */
+        if (submitTimer !== null) clearTimeout(submitTimer);
+        submitTimer = window.setTimeout(() => {
+          submitTimer = null;
+          stopSubmitting();
+          if (composer?.isOpen() !== true) return;
+          composer.setBusy(false);
+          composer.fail(
+            'No answer from the panel. Open the side panel and press Add again — your comment is still here.',
+          );
+        }, SUBMIT_TIMEOUT_MS);
+      })();
+    },
+  });
+  void getSetting('authorName').then((name) => {
+    authorName = name;
+    composer?.setAuthor(name);
+  });
+
+  ruler = createRuler(host.layer, () => {
+    const element = toolbar?.element;
+    if (!element) return null;
+    const box = element.getBoundingClientRect();
+    return box.width > 0 ? toRect(box) : null;
+  });
   pins = createPinLayer(host.layer, (targetId, kind) =>
     post({ type: 'PIN_CLICKED', payload: { targetId, kind } }),
   );
-  selection = createSelection(highlight, {
+  selection = createSelection(highlight, ruler, {
     onHover: (preview) => post({ type: 'ELEMENT_HOVERED', payload: { preview } }),
     onPick: (element) => {
       if (picking === 'comment') emitAnnotationTarget(element);
@@ -576,8 +849,9 @@ function install(): void {
     // permanently greyed out.
     toolbar.setEnabled('audit', true);
     toolbar.setEnabled('select', true);
-    toolbar.setEnabled('comment', true);
     toolbar.setEnabled('inspect', true);
+    // Comment stays off until the panel says there is an audit to attach one
+    // to. See COMMENTS_READY.
     announceActivation();
   });
 

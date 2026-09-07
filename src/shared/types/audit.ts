@@ -291,8 +291,32 @@ export type Annotation = {
   snapshotId?: string;
   /** Where the anchor was when the comment was written. */
   documentRect?: Rect;
+  /**
+   * How much the user wants somebody to care.
+   *
+   * Deliberately not a severity. A finding's severity comes from what Thursday
+   * measured and sits on a five-rung ladder it can defend; this is the author
+   * saying how urgent they think their own opinion is, which is a different
+   * kind of claim and is kept in different words and a different scale.
+   *
+   * Optional because comments written before this existed have no answer, and
+   * inventing `normal` for them would put a value the user never chose into
+   * their file.
+   */
+  priority?: AnnotationPriority;
+  /**
+   * Who wrote it, as they typed it into the composer.
+   *
+   * Stored so a report handed to somebody else says whose opinion each comment
+   * is -- which is most of what makes a comment useful to a third party. It is
+   * a name the user entered about themselves, and it never leaves the machine
+   * unless they export a file and send it.
+   */
+  author?: string;
   /** Attachment metadata, in the order the user added them. */
   attachments: AnnotationAttachment[];
   createdAt: number;
   updatedAt: number;
 };
+
+export type AnnotationPriority = 'normal' | 'medium' | 'high';

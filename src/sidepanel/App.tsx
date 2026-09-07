@@ -10,6 +10,7 @@ import { buildAuditPdf, pdfFileName } from '../pdf/report';
 import { auditFileName, buildAuditFile, serializeAuditFile } from '../storage/file';
 import { saveFile } from '../storage/download';
 import { carryComments } from '../storage/annotations';
+import { dataUrlToBlob } from '../shared/utils/base64';
 import type { AnnotationTarget } from '../shared/messaging/protocol';
 import type { Annotation, Audit, Finding, Severity } from '../shared/types';
 import { usePageConnection } from './state/usePageConnection';
@@ -302,6 +303,95 @@ export function App(): React.ReactElement {
   useEffect(() => {
     if (page.annotationTarget) setCommentTarget(page.annotationTarget);
   }, [page.annotationTarget]);
+
+  /*
+   * Keep the page's Comment button in step with whether there is an audit.
+   *
+   * Sent on activation as well as on change, because the content script starts
+   * with the button off and a page activated after an audit already exists
+   * would otherwise never be told it can comment.
+   */
+  useEffect(() => {
+    if (!page.activated) return;
+    send({ type: 'COMMENTS_READY', payload: { ready: active !== null } });
+  }, [page.activated, active !== null, send]);
+
+  /**
+   * A comment finished on the page becomes a stored comment here.
+   *
+   * The page gathers and the panel stores, so there is one implementation of
+   * attachments and one of the annotation schema. The page is told the outcome
+   * either way: its card stays open with the reason when a save fails, which is
+   * the only way the user gets to keep what they typed.
+   */
+  /**
+   * Submissions already dealt with, by their own id.
+   *
+   * The page resends until it hears back, because either half of the round trip
+   * can be down. That makes delivery at-least-once, so this is what keeps
+   * at-least-once from meaning two identical comments -- and the acknowledgement
+   * is sent again for a repeat, because the thing that went missing may well
+   * have been the acknowledgement rather than the submission.
+   */
+  const handled = useRef(new Set<string>());
+  const stored = useRef(0);
+  useEffect(() => {
+    const submission = page.submitted;
+    if (!submission || submission.at === stored.current) return;
+    stored.current = submission.at;
+    if (handled.current.has(submission.submissionId)) {
+      send({ type: 'ANNOTATION_SAVED', payload: { ok: true } });
+      return;
+    }
+    void (async () => {
+      try {
+        const files = await Promise.all(
+          submission.images.map(async (image, index) => {
+            const blob = dataUrlToBlob(image.dataUrl);
+            if (!blob) throw new Error('An attached image did not survive the trip from the page.');
+            return new File([blob], image.name || `pasted-${index + 1}`, { type: image.mime });
+          }),
+        );
+        if (!active) {
+          // Said precisely, because "could not be saved" gives somebody who
+          // has just written a paragraph nothing to do about it.
+          send({
+            type: 'ANNOTATION_SAVED',
+            payload: {
+              ok: false,
+              detail: 'Run an audit first — a comment is kept with the audit it was written on.',
+            },
+          });
+          return;
+        }
+        const saved = await comments.add({
+          body: submission.body,
+          priority: submission.priority,
+          author: submission.author,
+          target: submission.target,
+          files,
+          snapshotId: submission.target?.snapshotId ?? null,
+        });
+        if (saved) handled.current.add(submission.submissionId);
+        send({
+          type: 'ANNOTATION_SAVED',
+          payload: saved ? { ok: true } : { ok: false, detail: 'That comment could not be saved.' },
+        });
+        if (saved) {
+          setCommentTarget(null);
+          setTab('audit');
+        }
+      } catch (error) {
+        send({
+          type: 'ANNOTATION_SAVED',
+          payload: {
+            ok: false,
+            detail: error instanceof Error ? error.message : 'That comment could not be saved.',
+          },
+        });
+      }
+    })();
+  }, [page.submitted]);
 
   // Pressing Comment on the page toolbar has to bring the panel to the card.
   useEffect(() => {
@@ -654,9 +744,9 @@ export function App(): React.ReactElement {
               canComment={active !== null}
               picking={page.annotating}
               target={commentTarget}
-              snapshotId={active?.digest.snapshotId ?? null}
               activeId={openComment}
-              onPick={() => send({ type: 'START_ANNOTATION' })}
+              onPick={() => send({ type: 'START_ANNOTATION', payload: { anchored: true } })}
+              onPickPage={() => send({ type: 'START_ANNOTATION', payload: { anchored: false } })}
               onCancelPick={() => send({ type: 'CANCEL_ANNOTATION' })}
               onClearTarget={() => setCommentTarget(null)}
               onSelect={setOpenComment}

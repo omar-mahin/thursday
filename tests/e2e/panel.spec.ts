@@ -118,7 +118,8 @@ test('hovering during selection streams a live readout to the panel', async ({
   await page.mouse.move(target.x + 2, target.y + 2);
   // Wait for the on-page overlay first: backgrounding a tab pauses its
   // requestAnimationFrame, so switching too early can drop the hover tick.
-  await expect(page.locator('thursday-root .hl-box')).toBeVisible();
+  // Select draws the ruler, so that is the overlay to wait for.
+  await expect(page.locator('thursday-root .rl-outline')).toHaveAttribute('data-on', 'true');
 
   await panel.bringToFront();
   const readout = panel.locator('.card[data-selecting="true"]');

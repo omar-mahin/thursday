@@ -6,10 +6,16 @@ import type { BrowserContext, Page } from '@playwright/test';
 /**
  * Comments the user writes on a page, with images attached to them.
  *
+ * Written in the card on the page, which is where the composer lives as of
+ * 1.0.1: you click the element and say what you think about it next to it,
+ * rather than looking away to a box in the panel. The panel keeps the list, the
+ * editing and the attachments of existing comments.
+ *
  * These go through the real path in every case: the element is picked by
  * clicking it on the page, the image is chosen through a real file input, the
- * comment is written to real IndexedDB and read back after the panel has been
- * thrown away. Nothing here reaches into the panel's state.
+ * bytes travel to the panel as a data URL over the port, the comment is written
+ * to real IndexedDB and read back after the panel has been thrown away. Nothing
+ * here reaches into the panel's state.
  */
 
 const IMAGE = resolve('tests/fixtures/annotation-image.png');
@@ -44,6 +50,58 @@ async function pickOnPage(page: Page, selector: string): Promise<void> {
   await page.mouse.click(box.x + 5, box.y + 5);
 }
 
+const CARD = 'thursday-root .cm-card';
+
+/**
+ * Waits for the screenshot sweep an audit starts.
+ *
+ * An audit photographs its findings, which scrolls the page and takes the
+ * overlay off it for a moment. Anything that then clicks on the page has to
+ * let that finish, or it is clicking at coordinates that have moved.
+ */
+const settle = (panel: Page): Promise<void> =>
+  expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+    timeout: 60_000,
+  });
+
+/**
+ * Writes a comment the way a person does: in the card, on the page.
+ *
+ * Front-and-back shuffling is not incidental. The panel is a real tab under
+ * Playwright rather than a docked side panel, so only one of the two can be
+ * interactable at a time -- panel buttons are dispatched while the page holds
+ * the front, and the card is driven with the page in front because it takes
+ * real clicks.
+ *
+ * Waiting for the card to close is the round trip: it only closes when the
+ * panel has stored the comment and said so.
+ */
+async function writeOnPage(
+  page: Page,
+  panel: Page,
+  options: { text: string; anchor?: string; files?: Parameters<Page['setInputFiles']>[1]; priority?: string },
+): Promise<void> {
+  await panel
+    .getByRole('button', { name: options.anchor ? 'Comment on an element' : 'Comment on the page' })
+    .dispatchEvent('click');
+  await page.bringToFront();
+  if (options.anchor) await pickOnPage(page, options.anchor);
+
+  const card = page.locator(CARD);
+  await expect(card).toBeVisible();
+  if (options.priority) {
+    await page.locator(`thursday-root .cm-priority[data-level="${options.priority}"]`).click();
+  }
+  await page.locator('thursday-root .cm-body').fill(options.text);
+  if (options.files) {
+    // The hidden input, not the button that proxies for it.
+    await page.locator('thursday-root input[type="file"]').setInputFiles(options.files);
+  }
+  await page.locator('thursday-root .cm-add').click();
+  await expect(card).toBeHidden({ timeout: 15_000 });
+  await panel.bringToFront();
+}
+
 test('there is nowhere to write a comment until there is an audit to attach it to', async ({
   extensionId,
   context,
@@ -62,6 +120,7 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
 
     // Ask the page for an anchor, then click something on the page.
     await panel.getByRole('button', { name: 'Comment on an element' }).click();
@@ -70,14 +129,16 @@ testWithHostAccess(
     await page.bringToFront();
     await pickOnPage(page, 'h1');
 
+    // The card opens on the page, next to what was picked, and the element
+    // stays outlined so nobody comments on the wrong thing.
+    await expect(page.locator(CARD)).toBeVisible();
+    await expect(page.locator('thursday-root .hl-box')).toBeVisible();
+
+    await page.locator('thursday-root .cm-body').fill('This headline says nothing about the product.');
+    await page.locator('thursday-root .cm-add').click();
+    await expect(page.locator(CARD)).toBeHidden({ timeout: 15_000 });
+
     await panel.bringToFront();
-    // The panel names what was picked, so nobody comments on the wrong thing.
-    await expect(card(panel)).toContainText('Anchored to');
-    await expect(card(panel).locator('.mono')).toContainText('<h1>');
-
-    await panel.getByLabel('Comment', { exact: true }).fill('This headline says nothing about the product.');
-    await panel.getByRole('button', { name: 'Add comment' }).click();
-
     await expect(panel.locator('.comment-row')).toHaveCount(1);
     await expect(panel.locator('.comment-body')).toHaveText(
       'This headline says nothing about the product.',
@@ -86,10 +147,9 @@ testWithHostAccess(
     await expect(panel.locator('.comment-marker')).toHaveText('A');
     await expect(panel.locator('.comment-head')).toContainText('<h1>');
 
-    // The compose box is empty again and the anchor released, so the next
-    // comment does not silently inherit this one's element.
-    await expect(panel.getByLabel('Comment', { exact: true })).toHaveValue('');
-    await expect(card(panel)).toContainText('No anchor');
+    // The card is closed and its anchor released, so the next comment does not
+    // silently inherit this one's element.
+    await expect(page.locator(CARD)).toBeHidden();
 
     // And the page draws a comment pin, distinct from the finding pins.
     const pin = page.locator('thursday-root .pin[data-kind="comment"]');
@@ -111,9 +171,13 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
 
-    await panel.getByLabel('Comment', { exact: true }).fill('The whole flow asks for the email twice.');
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    // No element: the card opens unanchored. This is a first-class thing to
+    // write, not a fallback -- "the flow asks for the email twice" is about no
+    // single element -- and it was briefly the one thing the on-page composer
+    // could not do.
+    await writeOnPage(page, panel, { text: 'The whole flow asks for the email twice.' });
 
     await expect(panel.locator('.comment-head')).toContainText('Whole page');
     // No anchor means no pin: putting one somewhere arbitrary would claim a
@@ -130,14 +194,20 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
 
-    await panel.getByLabel('Comment', { exact: true }).fill('Here is what it looks like.');
-    await panel.getByLabel('Attach images to this comment').setInputFiles(IMAGE);
+    await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
+    await page.bringToFront();
+    await expect(page.locator(CARD)).toBeVisible();
+    await page.locator('thursday-root .cm-body').fill('Here is what it looks like.');
+    await page.locator('thursday-root input[type="file"]').setInputFiles(IMAGE);
     // Queued and named before it is committed, so a wrong file can be removed.
-    await expect(panel.locator('.attach-queue li')).toHaveCount(1);
-    await expect(panel.locator('.attach-queue li')).toContainText('annotation-image.png');
+    await expect(page.locator('thursday-root .cm-queue li')).toHaveCount(1);
+    await expect(page.locator('thursday-root .cm-queue li')).toContainText('annotation-image.png');
 
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await page.locator('thursday-root .cm-add').click();
+    await expect(page.locator(CARD)).toBeHidden({ timeout: 15_000 });
+    await panel.bringToFront();
 
     const image = panel.locator('.attach-grid img');
     await expect(image).toHaveCount(1);
@@ -159,20 +229,27 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
 
-    await panel.getByLabel('Comment', { exact: true }).fill('Text worth keeping.');
-    await panel.getByLabel('Attach images to this comment').setInputFiles([
+    await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
+    await page.bringToFront();
+    await page.locator('thursday-root .cm-body').fill('Text worth keeping.');
+    await page.locator('thursday-root input[type="file"]').setInputFiles([
       { name: 'spec.pdf', mimeType: 'application/pdf', buffer: Buffer.from('%PDF-1.4') },
       { name: 'annotation-image.png', mimeType: 'image/png', buffer: readFileSync(IMAGE) },
     ]);
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await page.locator('thursday-root .cm-add').click();
 
-    await expect(panel.getByRole('alert')).toContainText('spec.pdf');
-    await expect(panel.getByRole('alert')).toContainText('Only PNG, JPEG and WebP');
-    // Losing the words over one bad attachment would be the wrong trade, and
-    // the image that was fine went through.
-    await expect(panel.locator('.comment-body')).toHaveText('Text worth keeping.');
-    await expect(panel.locator('.attach-grid img')).toHaveCount(1);
+    /*
+     * Refused on the page, before anything crosses to the panel.
+     *
+     * The card is where the file was chosen, so the card is where the refusal
+     * belongs -- and it stays open holding the words, because losing somebody's
+     * writing over one bad attachment would be the wrong trade.
+     */
+    await expect(page.locator('thursday-root .cm-error')).toContainText('Only PNG, JPEG and WebP');
+    await expect(page.locator(CARD)).toBeVisible();
+    await expect(page.locator('thursday-root .cm-body')).toHaveValue('Text worth keeping.');
   },
 );
 
@@ -185,9 +262,8 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
-    await panel.getByLabel('Comment', { exact: true }).fill('Written before the panel closed.');
-    await panel.getByLabel('Attach images to this comment').setInputFiles(IMAGE);
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await settle(panel);
+    await writeOnPage(page, panel, { text: 'Written before the panel closed.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
     await panel.close();
 
@@ -210,9 +286,8 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
-    await panel.getByLabel('Comment', { exact: true }).fill('About to be deleted.');
-    await panel.getByLabel('Attach images to this comment').setInputFiles(IMAGE);
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await settle(panel);
+    await writeOnPage(page, panel, { text: 'About to be deleted.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
     await panel.locator('.history-row button.icon').first().click();
@@ -248,9 +323,9 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
 
-    await panel.getByLabel('Comment', { exact: true }).fill('First thought.');
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await writeOnPage(page, panel, { text: 'First thought.' });
     await expect(panel.locator('.comment-body')).toHaveText('First thought.');
 
     await panel.getByRole('button', { name: 'Edit' }).click();
@@ -274,13 +349,9 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
 
-    await panel.getByRole('button', { name: 'Comment on an element' }).click();
-    await page.bringToFront();
-    await pickOnPage(page, 'h1');
-    await panel.bringToFront();
-    await panel.getByLabel('Comment', { exact: true }).fill('Pin me.');
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await writeOnPage(page, panel, { text: 'Pin me.', anchor: 'h1' });
     await expect(panel.locator('.comment-row')).toHaveCount(1);
 
     // Dispatched rather than clicked: focusing the page would hide the panel.
@@ -302,9 +373,8 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
-    await panel.getByLabel('Comment', { exact: true }).fill('Carried in the file.');
-    await panel.getByLabel('Attach images to this comment').setInputFiles(IMAGE);
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await settle(panel);
+    await writeOnPage(page, panel, { text: 'Carried in the file.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
     const download = await Promise.all([
@@ -345,9 +415,8 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
-    await panel.getByLabel('Comment', { exact: true }).fill('Reported opinion, not a measurement.');
-    await panel.getByLabel('Attach images to this comment').setInputFiles(IMAGE);
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await settle(panel);
+    await writeOnPage(page, panel, { text: 'Reported opinion, not a measurement.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
     const download = await Promise.all([
@@ -393,14 +462,11 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
-    await panel.getByRole('button', { name: 'Comment on an element' }).click();
-    await page.bringToFront();
-    await pickOnPage(page, 'h1');
-    await panel.bringToFront();
-    await panel
-      .getByLabel('Comment', { exact: true })
-      .fill('Exact when made, approximate after a reload.');
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await settle(panel);
+    await writeOnPage(page, panel, {
+      text: 'Exact when made, approximate after a reload.',
+      anchor: 'h1',
+    });
     await expect(panel.locator('.comment-row')).toHaveCount(1);
 
     const download = await Promise.all([
@@ -451,14 +517,13 @@ testWithHostAccess(
     const panel = await openPanel(context, extensionId);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
 
     await panel.getByRole('button', { name: 'Comment on an element' }).click();
     await page.bringToFront();
     await pickOnPage(page, 'h1');
     await panel.bringToFront();
-    await panel.getByLabel('Comment', { exact: true }).fill('Still here after the second run.');
-    await panel.getByLabel('Attach images to this comment').setInputFiles(IMAGE);
-    await panel.getByRole('button', { name: 'Add comment' }).click();
+    await writeOnPage(page, panel, { text: 'Still here after the second run.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
     // Run it again, the way somebody does after fixing something.
@@ -505,5 +570,101 @@ testWithHostAccess(
     };
     expect(parsed.annotations?.[0]?.body).toBe('Still here after the second run.');
     expect(parsed.annotations?.[0]?.auditId).toBe(parsed.audit.id);
+  },
+);
+
+testWithHostAccess(
+  'a comment carries its author and its priority, and both survive a file',
+  async ({ openFixture, activate, extensionId, context }) => {
+    /*
+     * The two fields the on-page card added.
+     *
+     * Both are the author's, not Thursday's: the name is what they typed about
+     * themselves and the priority is how urgent they think their own opinion
+     * is. Neither is a measurement, which is why the priority is kept in
+     * different words and a different scale from a finding's severity.
+     *
+     * Followed all the way through a saved file and back into a panel that
+     * never saw the page, because that is the journey that matters -- a report
+     * handed to somebody else is most of the point of writing the name down.
+     */
+    const settings = await context.newPage();
+    await settings.goto(`chrome-extension://${extensionId}/options.html`);
+    await settings.getByLabel('Your name').fill('Md Omar Faruque');
+    await settings.close();
+
+    const page = await openFixture('cro.html');
+    await activate(page);
+    const panel = await openPanel(context, extensionId);
+    await panel.getByRole('button', { name: 'Full audit' }).click();
+    await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
+
+    // The card knows who is writing without being told again.
+    await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
+    await page.bringToFront();
+    await expect(page.locator('thursday-root .cm-who')).toHaveText('Md Omar Faruque');
+    await page.locator('thursday-root .cm-priority[data-level="high"]').click();
+    await expect(page.locator('thursday-root .cm-priority[data-level="high"]')).toHaveAttribute(
+      'aria-checked',
+      'true',
+    );
+    await page.locator('thursday-root .cm-body').fill('The price is hidden until checkout.');
+    await page.locator('thursday-root .cm-add').click();
+    await expect(page.locator(CARD)).toBeHidden({ timeout: 15_000 });
+
+    await panel.bringToFront();
+    await expect(panel.locator('.comment-priority')).toHaveText('High');
+    await expect(panel.locator('.comment-row')).toContainText('Md Omar Faruque');
+
+    const download = await Promise.all([
+      panel.waitForEvent('download'),
+      panel.getByRole('button', { name: 'Save audit' }).click(),
+    ]).then(([event]) => event);
+    const text = readFileSync(await download.path(), 'utf8');
+    const parsed = JSON.parse(text) as {
+      annotations?: { author?: string; priority?: string }[];
+    };
+    expect(parsed.annotations?.[0]?.author).toBe('Md Omar Faruque');
+    expect(parsed.annotations?.[0]?.priority).toBe('high');
+
+    // And back into a panel that has never seen this page.
+    const fresh = await openPanel(context, extensionId);
+    await fresh.getByLabel('Open a saved audit file').setInputFiles({
+      name: 'carried.thursday.json',
+      mimeType: 'application/json',
+      buffer: Buffer.from(text, 'utf8'),
+    });
+    await expect(fresh.locator('.comment-priority')).toHaveText('High');
+    await expect(fresh.locator('.comment-row')).toContainText('Md Omar Faruque');
+  },
+);
+
+testWithHostAccess(
+  'the priority can be changed afterwards, and editing the words does not invent one',
+  async ({ openFixture, activate, extensionId, context }) => {
+    const page = await openFixture('cro.html');
+    await activate(page);
+    const panel = await openPanel(context, extensionId);
+    await panel.getByRole('button', { name: 'Full audit' }).click();
+    await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await settle(panel);
+
+    // Written with no priority chosen, so it has none.
+    await writeOnPage(page, panel, { text: 'Worth a look.' });
+    await expect(panel.locator('.comment-priority')).toHaveCount(0);
+
+    // Raised in the panel afterwards, which is where comments are managed.
+    await panel.getByRole('button', { name: 'Edit' }).click();
+    await panel.getByRole('radio', { name: 'Medium' }).click();
+    await panel.locator('.comment-row').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(panel.locator('.comment-priority')).toHaveText('Medium');
+
+    // Editing only the words leaves it where the author put it.
+    await panel.getByRole('button', { name: 'Edit' }).click();
+    await panel.getByLabel('Edit comment A').fill('Worth a proper look.');
+    await panel.locator('.comment-row').getByRole('button', { name: 'Save', exact: true }).click();
+    await expect(panel.locator('.comment-body')).toHaveText('Worth a proper look.');
+    await expect(panel.locator('.comment-priority')).toHaveText('Medium');
   },
 );

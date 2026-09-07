@@ -4,6 +4,8 @@ import { computeAccessibleName } from '../../audit/accessibility/accname';
 import { effectiveRole } from '../../audit/accessibility/roles';
 import { toRect } from '../snapshot/measure';
 import { describeForLabel, type Highlight } from '../overlay/highlight';
+import { measureElement } from '../overlay/measure';
+import type { Ruler } from '../overlay/ruler';
 
 /**
  * Element selection (spec section 9).
@@ -24,7 +26,14 @@ export type SelectionCallbacks = {
 };
 
 export type Selection = {
-  start(): void;
+  /**
+   * `measure` turns the ruler on for this session.
+   *
+   * On when picking something to inspect, off when picking something to comment
+   * on: a measurement HUD is exactly what you want in the first case and pure
+   * noise in the second, where the question is "which element" and nothing else.
+   */
+  start(options?: { measure?: boolean }): void;
   cancel(): void;
   isActive(): boolean;
   destroy(): void;
@@ -53,11 +62,17 @@ const NEVER_SELECTABLE = new Set(['html', 'body', HOST_TAG_NAME]);
 const CLICK_GUARD_MS = 600;
 const TRAILING_EVENTS = ['pointerup', 'mouseup', 'click', 'dblclick', 'auxclick', 'contextmenu'] as const;
 
-export function createSelection(highlight: Highlight, callbacks: SelectionCallbacks): Selection {
+export function createSelection(
+  highlight: Highlight,
+  ruler: Ruler,
+  callbacks: SelectionCallbacks,
+): Selection {
   let session: AbortController | null = null;
   let pointer: { x: number; y: number } | null = null;
   let current: Element | null = null;
   let frame = 0;
+  /** Whether this session shows the ruler. Set by start(). */
+  let measuring = false;
   let previousCursor: string | null = null;
   let guard: AbortController | null = null;
   let guardTimer = 0;
@@ -121,13 +136,27 @@ export function createSelection(highlight: Highlight, callbacks: SelectionCallba
     if (!found || isOurs(found) || NEVER_SELECTABLE.has(found.tagName.toLowerCase())) {
       current = null;
       highlight.hide();
+      ruler.hide();
       callbacks.onHover(null);
       return;
     }
     if (found === current) return; // nothing changed; skip the work
     current = found;
+    const label = describeForLabel(found);
     const preview = previewOf(found);
-    highlight.show(preview.rect, describeForLabel(found), 'hover');
+    /*
+     * The measuring work happens here, in the branch that only runs when the
+     * hovered element *changes* -- not on every pointer move. A dozen
+     * getComputedStyle calls per frame while somebody drags the mouse across a
+     * page is how a measuring tool ends up making the page it is measuring feel
+     * slow.
+     */
+    if (measuring) {
+      highlight.hide();
+      ruler.show(measureElement(found, label.selector));
+    } else {
+      highlight.show(preview.rect, label, 'hover');
+    }
     callbacks.onHover(preview);
   };
 
@@ -180,6 +209,7 @@ export function createSelection(highlight: Highlight, callbacks: SelectionCallba
   }
 
   function stop(): void {
+    measuring = false;
     if (!session) return;
     session.abort();
     session = null;
@@ -201,13 +231,15 @@ export function createSelection(highlight: Highlight, callbacks: SelectionCallba
 
   function cancel(): void {
     highlight.hide();
+    ruler.hide();
     installClickGuard();
     stop();
   }
 
   return {
-    start() {
+    start(purpose) {
       if (session) return;
+      measuring = purpose?.measure === true;
       session = new AbortController();
       const options = { capture: true, signal: session.signal };
       previousCursor = document.documentElement.style.getPropertyValue('cursor');

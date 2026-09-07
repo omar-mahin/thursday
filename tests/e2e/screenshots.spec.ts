@@ -199,7 +199,14 @@ test('Thursday is not in its own screenshots', async ({ openFixture, activate, e
     timeout: 60_000,
   });
 
-  // A finding in the first section, whose crop covers the top of the page.
+  /*
+   * A finding in the first section, whose crop covers the top of the page.
+   *
+   * The contrast findings on this fixture are grouped -- there are two of them
+   * since the ruler cross-check gained a translucent case -- so the group has
+   * to be opened before the individual rows exist in the DOM.
+   */
+  await panel.locator('.finding-head', { hasText: 'contrast ratio' }).first().dispatchEvent('click');
   const row = panel.locator('.finding-row', { hasText: 'contrast' }).first();
   await expect(row).toBeVisible();
   await row.dispatchEvent('click');

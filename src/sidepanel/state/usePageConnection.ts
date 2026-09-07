@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { connectPort, type TypedPort } from '../../shared/messaging/port';
 import type {
+  AnnotationSubmission,
   AnnotationTarget,
   CaptureBandReply,
   ElementRectReply,
@@ -48,6 +49,8 @@ export type PageState = {
    * along rather than look like no answer at all.
    */
   band: (CaptureBandReply & { at: number }) | null;
+  /** The last comment the page finished writing, waiting to be stored. */
+  submitted: (AnnotationSubmission & { at: number }) | null;
 };
 
 export type LogEntry = { at: number; direction: 'in' | 'out'; type: ThursdayMessage['type'] };
@@ -98,6 +101,7 @@ const INITIAL: PageState = {
   snapshot: null,
   elementRect: null,
   band: null,
+  submitted: null,
 };
 
 const LOG_LIMIT = 40;
@@ -234,6 +238,12 @@ export function usePageConnection(): {
             lastToolbarAction: { action: message.payload.action, at: Date.now() },
           }));
           return;
+        case 'ANNOTATION_SUBMITTED':
+          // Stamped: two comments can be written in the same millisecond of
+          // wall clock only in tests, but a second one with identical text
+          // must still reach the store.
+          setPage((state) => ({ ...state, submitted: { ...message.payload, at: Date.now() } }));
+          return;
         case 'BAND_READY':
           // Stamped, because two screenfuls can answer identically -- same
           // scroll position, same empty target list -- and the second answer
@@ -285,6 +295,8 @@ export function usePageConnection(): {
         case 'SET_ACTIVE_PIN':
         case 'FOCUS_ELEMENT':
         case 'CAPTURE_BAND':
+        case 'ANNOTATION_SAVED':
+        case 'COMMENTS_READY':
         case 'REQUEST_ELEMENT_RECT':
         case 'START_ANNOTATION':
         case 'CANCEL_ANNOTATION':

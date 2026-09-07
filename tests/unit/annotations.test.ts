@@ -7,7 +7,7 @@ import {
   parseAuditFile,
   serializeAuditFile,
 } from '../../src/storage/file';
-import { fitWithin } from '../../src/sidepanel/annotate/image';
+import { fitWithin } from '../../src/shared/media/image';
 import type { Annotation, Audit, ElementReference, PageSnapshotDigest } from '../../src/shared/types';
 
 const reference = (overrides: Partial<ElementReference> = {}): ElementReference => ({

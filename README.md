@@ -26,6 +26,7 @@ up, lets you write on them, keeps the results, tells you what changed, and passe
 - **Sprint 5** — persistence and files: audits survive a restart, save and reopen as `.thursday.json`, export as a self-contained HTML report, and re-audit to see what was fixed.
 - **Sprint 6** — hardening and ship: both end-to-end flows tested, performance budgets, packaging, and Thursday audited by Thursday.
 - **Sprint 7** — comments and PDF: write your own notes on any element, attach images to them, and export the whole audit as a PDF written from scratch with no dependencies.
+- **1.0.1** — a ruler on hover, pictures of every finding, and the comment composer moved onto the page.
 
 **482 unit tests and 120 Playwright tests.** [STORE_LISTING.md](STORE_LISTING.md) holds the
 submission copy, the permission justifications and the data disclosures.
@@ -69,6 +70,25 @@ a crop taken for a button can contain the password box next to it, and that is c
 element that is or contains a password or payment field is not photographed at all. You can still
 turn the whole thing off in settings, and off means no pictures anywhere.
 
+## The ruler
+
+Press **Select** and hover anything. A bar appears with what that element actually measures: its
+size, the first family in its font stack, the font size, the weight, the line height, the letter
+spacing, its text colour in hex — and, when the element has text of its own, whether it passes AA
+and AAA. Purple pills show the gap to the neighbour above and below; four hairlines extend its edges
+across the viewport, which is what turns "these look misaligned" into a fact.
+
+Two things it will not do. It **will not grade contrast on an element with no text of its own**: a
+wrapper inherits a colour and a size, so those chips are still true of it, but a ratio for text that
+is not there is a number about nothing. And it **will not guess a background** — text on an image, a
+gradient, a blend mode or a backdrop filter gets "contrast —" and a tooltip saying why, rather than a
+fabricated number.
+
+The contrast it shows is resolved by the same code the audit's own contrast rule uses. That is
+deliberate and tested: hovering a paragraph and reading *AA passes* while the findings list reports
+a contrast failure on that same paragraph would be a contradiction with no way to tell which half
+was lying.
+
 ## Comments
 
 Findings are what Thursday measured. Comments are what **you** noticed — and the two are kept
@@ -76,9 +96,20 @@ apart everywhere, on purpose. A comment has no severity and no confidence, sits 
 of the report, and is labelled as an opinion, because the moment somebody's judgement inherits the
 authority of a contrast ratio the whole tool is worth less.
 
-Press **Comment on an element**, click the thing you mean, and write. Or write without picking
-anything: "the checkout asks for the email twice" is about the flow, not about one button, and
-Thursday will not make you pin it to an arbitrary element.
+Press **Comment on an element**, click the thing you mean, and a card opens **on the page, next to
+it** — which is the whole point of an on-page annotation tool: the element, the marker and your
+words are all in view at once, instead of you looking away to a box somewhere else. Or press
+**Comment on the page** and write without picking anything: "the checkout asks for the email twice"
+is about the flow, not about one button, and Thursday will not make you pin it to an arbitrary
+element.
+
+Each comment carries **your name** and a **priority** — Normal, Medium or High. Both are yours
+rather than Thursday's: the name is what you typed about yourself in settings, so a report handed to
+a client says whose opinion each note is, and the priority is how urgent *you* think your own
+opinion is. It is deliberately not a severity. A finding's severity comes from a measurement and
+sits on a five-rung ladder Thursday can defend; a priority is kept in different words, on a
+different scale, and drawn in a different style everywhere it appears, so nobody weighs the two the
+same way.
 
 Comments are lettered — A, B, C — where findings are numbered, so a marker on the page can never be
 mistaken for the other kind. They pin, they persist, they travel in the audit file, and they appear
@@ -89,7 +120,8 @@ should be able to write a review, re-run the audit to check a fix, and still hav
 pins are then drawn dashed: the element index they were written with belongs to a capture that is
 gone, so the position has to be found by searching the live page.
 
-**Images attach to comments.** Choose files or paste a screenshot straight into the box. Every
+**Images attach to comments.** Choose files in the card, or paste a screenshot straight into the
+panel when adding more to an existing comment. Every
 image is decoded, scaled to at most 1600px on the long edge and re-encoded before anything is
 written to disk — the original file is never kept, because a 5000px retina PNG is normal and six of
 them is not a reasonable thing to leave in a browser database. Captions become the alt text.

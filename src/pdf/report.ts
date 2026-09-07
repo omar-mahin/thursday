@@ -2,6 +2,7 @@ import { CATEGORY_LABELS } from '../audit/engine/registry';
 import { SEVERITY_LABELS } from '../audit/engine/severity';
 import { countBySeverity } from '../audit/engine/run';
 import { commentLabel } from '../shared/utils/labels';
+import { PRIORITY_LABELS } from '../shared/constants/priority';
 import { PRODUCT_NAME, PRODUCT_TAGLINE } from '../shared/constants/product';
 import { hexToUnitRgb, SEVERITY_HEX } from '../shared/constants/severity';
 import type {
@@ -65,6 +66,16 @@ const SEVERITY_COLORS: Record<Severity, PdfColor> = {
 };
 
 const COMMENT_COLOR: PdfColor = [0.059, 0.42, 0.42];
+
+/**
+ * The one priority that gets its own colour on the page.
+ *
+ * Not from the severity palette. A comment is the author's opinion and a
+ * finding is a measurement, and giving them the same red would invite a reader
+ * to weigh them the same way -- which is the conflation this product exists to
+ * avoid. This is a darker, quieter red, and only `high` gets it.
+ */
+const PRIORITY_HIGH: PdfColor = [0.6, 0.13, 0.13];
 
 const TYPE_LABEL: Record<Finding['type'], string> = {
   rule: 'Measured',
@@ -259,6 +270,29 @@ function commentSection(
     const badgeWidth = layout.badge(marker, COMMENT_COLOR, 8.5);
     const anchor = where(annotation) ?? 'On the page as a whole (no element anchor).';
     layout.text(anchor, { font: 'mono', size: 8, color: DIM, indent: badgeWidth + 7, after: 3 });
+    /*
+     * Who and how urgent, on one line, before the words.
+     *
+     * Only when there is something to say: a comment with no author and no
+     * priority gets no line at all, rather than one reading "Normal" that the
+     * author never chose. The priority is drawn in its own colour but is
+     * deliberately *not* on the severity palette -- it is the author's opinion
+     * of their own note, not a measurement, and it should not read as one.
+     */
+    const attribution = [
+      annotation.author,
+      annotation.priority && annotation.priority !== 'normal'
+        ? `${PRIORITY_LABELS[annotation.priority]} priority`
+        : null,
+    ].filter((part): part is string => typeof part === 'string' && part.trim() !== '');
+    if (attribution.length > 0) {
+      layout.text(attribution.join('  ·  '), {
+        font: 'bold',
+        size: 8.5,
+        color: annotation.priority === 'high' ? PRIORITY_HIGH : DIM,
+        after: 3,
+      });
+    }
     layout.text(annotation.body, { size: 10, leading: 1.45, after: 4 });
 
     for (const meta of annotation.attachments) {

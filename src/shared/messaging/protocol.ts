@@ -1,4 +1,5 @@
 import type {
+  AnnotationPriority,
   AuditStage,
   ElementPreview,
   ElementReference,
@@ -60,10 +61,44 @@ export type ThursdayMessage =
    * annotation target opens a compose box. One message with a mode flag would
    * mean every handler downstream has to remember to check it.
    */
-  | { type: 'START_ANNOTATION' }
+  /**
+   * Panel -> page: open the comment card.
+   *
+   * `anchored` false opens it straight away with no element behind it. A
+   * comment about the page as a whole is a real and common thing to want --
+   * "the checkout asks for the same thing twice" is about no single element --
+   * and when the composer moved onto the page that was briefly the one thing
+   * it could not do.
+   */
+  | { type: 'START_ANNOTATION'; payload: { anchored: boolean } }
   | { type: 'CANCEL_ANNOTATION' }
   | { type: 'ANNOTATION_TARGET'; payload: AnnotationTarget }
   | { type: 'ANNOTATION_STATE'; payload: { active: boolean } }
+  /**
+   * Page -> panel: a comment the user finished writing on the page.
+   *
+   * The composer gathers, the panel stores. Storage stays in one place --
+   * the panel owns the database -- so the page never needs its own copy of
+   * attachment handling, image refusals or the annotation schema.
+   *
+   * Images travel as data URLs because runtime messaging is JSON: a Blob does
+   * not survive the trip. They are downscaled by the page first, using the
+   * same code the panel uses, so what crosses is a few hundred kilobytes
+   * rather than the original file.
+   */
+  | { type: 'ANNOTATION_SUBMITTED'; payload: AnnotationSubmission }
+  /** Panel -> page: stored, or refused with a reason to show in the card. */
+  | { type: 'ANNOTATION_SAVED'; payload: { ok: true } | { ok: false; detail: string } }
+  /**
+   * Panel -> page: whether there is somewhere to put a comment yet.
+   *
+   * A comment is stored against the audit it was written on, so until there is
+   * one there is nowhere for it to go. Without this the toolbar's Comment
+   * button was pressable, the card opened, the user typed, and only then were
+   * they told it could not be kept -- the same dead end the greyed-out Report
+   * button used to be, with the added insult of having written something first.
+   */
+  | { type: 'COMMENTS_READY'; payload: { ready: boolean } }
   // -- screenshot crops (Sprint 5) -------------------------------------------
   /** Panel -> page: bring an element on screen and say exactly where it landed. */
   | { type: 'REQUEST_ELEMENT_RECT'; payload: { findingId: string; ref: ElementReference } }
@@ -108,6 +143,14 @@ export type AnnotationTarget = {
    * of the same element is a second thing to keep in step.
    */
   elementIndex?: number;
+  /**
+   * Which snapshot that index belongs to.
+   *
+   * Sent with the index or not at all. An index with no snapshot behind it is
+   * not a shortcut, it is a number that happens to be in range -- and using it
+   * against a different snapshot draws a confident pin on the wrong element.
+   */
+  snapshotId?: string;
 };
 
 /**
@@ -181,6 +224,34 @@ export type CaptureTarget = {
   rect: Rect | null;
   /** True when this element is (or contains) a field Thursday will not photograph. */
   sensitive: boolean;
+};
+
+/** A finished comment, on its way from the page to the panel. */
+export type AnnotationSubmission = {
+  /**
+   * Identifies this submission across retries.
+   *
+   * The page resends until the panel acknowledges, because either half of the
+   * round trip can be down: the worker can be collected, and after it restarts
+   * the panel may not have reconnected yet -- so a message forwarded in that
+   * window reaches nobody. Retrying makes delivery at-least-once, and this id
+   * is what stops at-least-once becoming duplicate comments.
+   */
+  submissionId: string;
+  /** Null for a comment about the page as a whole. */
+  target: AnnotationTarget | null;
+  body: string;
+  priority: AnnotationPriority;
+  /** The author's name as it stood when they wrote it. */
+  author: string;
+  images: SubmittedImage[];
+};
+
+export type SubmittedImage = {
+  name: string;
+  mime: string;
+  /** Already downscaled and re-encoded by the page. */
+  dataUrl: string;
 };
 
 export type ThursdayMessageType = ThursdayMessage['type'];

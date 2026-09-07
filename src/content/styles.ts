@@ -291,6 +291,300 @@ export const OVERLAY_CSS = `
 .hl-size { opacity: 0.8; font-variant-numeric: tabular-nums; }
 `;
 
+/**
+ * The ruler.
+ *
+ * Its own stylesheet section rather than an extension of the highlight, because
+ * the two answer different questions: the highlight says "this is the element
+ * under your pointer", the ruler says what that element measures.
+ *
+ * Everything is positioned with transforms on a fixed layer, so nothing here
+ * can reflow the page being measured -- which would be a special kind of
+ * useless in a measuring tool.
+ */
+export const RULER_CSS = `
+.rl-outline {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  box-sizing: border-box;
+  /* Dashed and pink, so it reads as an annotation over the page rather than as
+     part of it. A solid accent border is too easy to mistake for a focus ring. */
+  border: 1.5px dashed #ec4899;
+  border-radius: 2px;
+  pointer-events: none;
+  will-change: transform, width, height;
+}
+
+/* Hairlines extending the element's edges, for judging alignment against the
+   rest of the page. Faint on purpose: they are a straight edge, not content. */
+.rl-guide {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  pointer-events: none;
+  background: color-mix(in srgb, #6366f1 45%, transparent);
+  will-change: transform;
+}
+.rl-guide[data-axis="h"] { width: 100vw; height: 1px; }
+.rl-guide[data-axis="v"] { width: 1px; height: 100vh; }
+
+/* The gap pills, sitting in the middle of the space they describe. */
+.rl-gap {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  height: 20px;
+  padding: 0 7px;
+  border-radius: 10px;
+  background: #8b5cf6;
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  line-height: 20px;
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+  pointer-events: none;
+  will-change: transform;
+}
+
+.rl-hud {
+  position: absolute;
+  top: 0;
+  left: 0;
+  display: none;
+  align-items: center;
+  gap: 6px;
+  max-width: calc(100vw - 8px);
+  padding: 5px 8px;
+  border-radius: 10px;
+  background: #16181e;
+  color: #e7e9ee;
+  font-size: 12px;
+  font-weight: 500;
+  line-height: 22px;
+  white-space: nowrap;
+  box-shadow: 0 6px 18px rgba(0, 0, 0, 0.32);
+  pointer-events: none;
+  will-change: transform;
+  /* Never a scrollbar and never wider than the screen: on a narrow viewport the
+     chips at the end are clipped, which loses information but cannot push the
+     bar off where it can be read at all. */
+  overflow: hidden;
+}
+/* Shown by the attribute the ruler sets, never by clearing an inline style --
+   see the note in ruler.ts about why clearing an inline display value reverts
+   to a display-none rule and hides the thing you meant to show. */
+.rl-outline[data-on="true"],
+.rl-guide[data-on="true"],
+.rl-gap[data-on="true"] { display: block; }
+.rl-hud[data-on="true"] { display: flex; }
+.rl-chip[data-on="false"], .rl-div[data-on="false"] { display: none; }
+
+.rl-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 7px;
+  border-radius: 6px;
+  font-variant-numeric: tabular-nums;
+}
+/* One divider between groups: dimensions | typography | colour and contrast. */
+.rl-div {
+  flex: none;
+  width: 1px;
+  height: 16px;
+  background: rgba(255, 255, 255, 0.16);
+}
+.rl-size { background: #2b2f3a; color: #fff; font-weight: 700; }
+/* The font stack and the size are what people look for first, so they are the
+   two that get colour. */
+.rl-family { background: #4c1d95; color: #ddd6fe; }
+.rl-fontsize { background: #0e7490; color: #a5f3fc; }
+.rl-weight, .rl-plain { color: #a8adba; }
+.rl-colour { background: #2b2f3a; color: #fff; font-family: ui-monospace, SFMono-Regular, Menlo, monospace; }
+.rl-swatch {
+  width: 11px;
+  height: 11px;
+  border-radius: 50%;
+  /* An outline, so a swatch of the page's own background colour is still a
+     visible circle rather than a hole in the bar. */
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.45);
+}
+.rl-grade { font-weight: 700; }
+.rl-grade[data-state="pass"] { background: #14532d; color: #86efac; }
+.rl-grade[data-state="fail"] { background: #7f1d1d; color: #fca5a5; }
+/* Not "fail". Nothing was measured, and a red badge would be a claim. */
+.rl-grade[data-state="unknown"] { background: #2b2f3a; color: #a8adba; font-weight: 500; }
+`;
+
+/**
+ * The on-page comment composer.
+ *
+ * Dark whatever the page is, and whatever the theme is. The card sits directly
+ * on somebody else's design and has to read as Thursday's own surface rather
+ * than as part of the page -- a light card on a light page looks like a modal
+ * the site opened, and the user is about to write a criticism of that site
+ * inside it.
+ */
+export const COMPOSER_CSS = `
+.cm-card {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 320px;
+  box-sizing: border-box;
+  padding: 12px;
+  border: 1px solid #2b2f3a;
+  border-radius: 12px;
+  background: #16181e;
+  color: #e7e9ee;
+  font-size: 13px;
+  line-height: 1.45;
+  box-shadow: 0 14px 40px rgba(0, 0, 0, 0.45);
+  pointer-events: auto;
+  will-change: transform;
+}
+.cm-card[hidden] { display: none; }
+
+.cm-head {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid #2b2f3a;
+}
+.cm-who {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: 14px;
+  font-weight: 600;
+}
+.cm-name {
+  flex: 1;
+  min-width: 0;
+  padding: 3px 6px;
+  border: 1px solid #4c5565;
+  border-radius: 6px;
+  background: #0f1116;
+  color: #e7e9ee;
+  font: inherit;
+}
+.cm-edit {
+  flex: none;
+  padding: 2px 6px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #7c9cff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+  /* Small text, so it still needs to be a real target: 2.5.8 applies to a
+     link-shaped button as much as to an icon. */
+  min-width: 24px;
+  min-height: 24px;
+}
+.cm-edit:hover { background: #21252e; }
+
+.cm-priorities { display: flex; gap: 8px; margin-bottom: 8px; }
+.cm-priority {
+  flex: 1;
+  min-height: 32px;
+  padding: 4px 8px;
+  border: 1px solid #3a4150;
+  border-radius: 16px;
+  background: transparent;
+  color: #a8adba;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cm-priority:hover { background: #21252e; }
+/* Each level keeps its own colour when chosen, so the choice is legible without
+   reading the word -- and none of them is red-on-dark at low contrast. */
+.cm-priority[data-on="true"][data-level="normal"] { border-color: #6b7280; background: #343a46; color: #fff; }
+.cm-priority[data-on="true"][data-level="medium"] { border-color: #d97706; color: #fbbf24; }
+.cm-priority[data-on="true"][data-level="high"] { border-color: #dc2626; color: #f87171; }
+
+.cm-body {
+  display: block;
+  width: 100%;
+  box-sizing: border-box;
+  min-height: 84px;
+  padding: 8px;
+  border: 1px solid #4c5565;
+  border-radius: 8px;
+  background: #0f1116;
+  color: #e7e9ee;
+  font: inherit;
+  resize: vertical;
+}
+.cm-body::placeholder { color: #6b7280; }
+
+.cm-queue { list-style: none; margin: 8px 0 0; padding: 0; display: flex; flex-direction: column; gap: 4px; }
+.cm-queue li { display: flex; align-items: center; gap: 8px; font-size: 12px; }
+.cm-file { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: #a8adba; }
+.cm-drop {
+  flex: none;
+  width: 24px;
+  height: 24px;
+  border: 0;
+  border-radius: 6px;
+  background: transparent;
+  color: #a8adba;
+  font: inherit;
+  cursor: pointer;
+}
+.cm-drop:hover { background: #21252e; color: #fff; }
+
+.cm-error { margin: 8px 0 0; color: #fca5a5; font-size: 12px; }
+.cm-error[hidden] { display: none; }
+
+.cm-foot { display: flex; align-items: center; gap: 8px; margin-top: 12px; }
+.cm-spacer { flex: 1; }
+.cm-attach {
+  display: grid;
+  place-items: center;
+  width: 34px;
+  height: 34px;
+  padding: 0;
+  border: 1px solid #3a4150;
+  border-radius: 8px;
+  background: transparent;
+  color: #e7e9ee;
+  cursor: pointer;
+}
+.cm-attach:hover { background: #21252e; }
+.cm-clip { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.cm-cancel, .cm-add {
+  min-height: 34px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
+.cm-cancel { background: #343a46; color: #e7e9ee; }
+.cm-cancel:hover { background: #3f4653; }
+.cm-add { background: #4f46e5; color: #fff; }
+.cm-add:hover { background: #4338ca; }
+.cm-add:disabled, .cm-cancel:disabled, .cm-attach:disabled { opacity: 0.55; cursor: default; }
+
+.cm-card button:focus-visible, .cm-card textarea:focus-visible, .cm-card input:focus-visible {
+  outline: 2px solid #7c9cff;
+  outline-offset: 2px;
+}
+`;
+
 /** Page pins. Positioned with transforms only, so page layout is untouched. */
 export const PIN_CSS = `
 .pin-layer {

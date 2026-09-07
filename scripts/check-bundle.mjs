@@ -35,7 +35,20 @@ const FORBIDDEN = [
 
 /** Per-file budgets, in kilobytes. */
 const BUDGETS = [
-  { pattern: /^content\.js$/, kb: 60, note: 'injected into every audited page' },
+  /*
+   * 90KB, raised from 60 when the content script stopped being a toolbar.
+   *
+   * The budget exists so that growth is a decision rather than an accident, so
+   * here is the decision. What it now carries: the toolbar, the snapshot
+   * collector, pins, element selection, the ruler (live measurement, contrast
+   * grading and the shared background resolver) and the on-page comment
+   * composer with image preparation. 60KB described a bar with five buttons.
+   *
+   * Gzip is what actually costs on injection, and that is around 24KB. The
+   * uncompressed number stays the budget because it is the one that shows a
+   * dependency arriving.
+   */
+  { pattern: /^content\.js$/, kb: 90, note: 'injected into every audited page' },
   { pattern: /^service-worker\.js$/, kb: 20, note: 'a router, nothing more' },
   { pattern: /^assets\/vendor\.js$/, kb: 240, note: 'React and React DOM' },
   { pattern: /^assets\/sidepanel\.js$/, kb: 200, note: 'the panel, the rules, both report writers and the PDF font metrics' },
