@@ -227,7 +227,7 @@ function install(): void {
         composer?.close();
         return;
       case 'COMMENTS_READY':
-        toolbar?.setEnabled('comment', message.payload.ready);
+        toolbar?.setEnabled('comment', message.payload.ready, 'run an audit first');
         // A card already open stays open: the audit going away underneath it
         // is not a reason to throw away what somebody is in the middle of
         // writing, and the save will say so if it cannot be kept.
@@ -850,8 +850,17 @@ function install(): void {
     toolbar.setEnabled('audit', true);
     toolbar.setEnabled('select', true);
     toolbar.setEnabled('inspect', true);
-    // Comment stays off until the panel says there is an audit to attach one
-    // to. See COMMENTS_READY.
+    /*
+     * Comment stays off until the panel says there is an audit to attach one
+     * to (see COMMENTS_READY), and says so rather than just being grey.
+     *
+     * A comment is stored against the audit it was written on. Leaving the
+     * button pressable let somebody pick an element, write a paragraph and only
+     * then be told it could not be kept; greying it without a reason replaced
+     * that with a button that refuses and will not say why. Neither is good
+     * enough on its own.
+     */
+    toolbar.setEnabled('comment', false, 'run an audit first');
     announceActivation();
   });
 

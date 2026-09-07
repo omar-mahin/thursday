@@ -450,3 +450,66 @@ testWithHostAccess('the one greyed-out button is enabled as soon as it can be', 
   // The promise, kept.
   await expect(comment).toBeEnabled();
 });
+
+testWithHostAccess('a button that is off says why, and the tip stays on screen', async ({
+  openFixture,
+  activate,
+  extensionId,
+  context,
+}) => {
+  /*
+   * Two failures with one cause: a control that refuses without explaining.
+   *
+   * Comment is off until there is an audit, because a comment is stored against
+   * the audit it was written on. Greying it stopped somebody writing a
+   * paragraph they could not keep -- and then said nothing about what to do
+   * instead, which is the same dead end from the other side.
+   *
+   * The clamping is here rather than in its own test because the reason is what
+   * made the tips long enough to run off the window. The toolbar is draggable,
+   * so an edge is a normal place for it to be.
+   */
+  const page = await openFixture('accessibility.html');
+  await page.setViewportSize({ width: 900, height: 600 });
+  await activate(page);
+
+  const comment = toolbar(page).getByRole('button', { name: 'Comment' });
+  await expect(comment).toBeDisabled();
+  // The name is unchanged; the reason is a description and the visible tip.
+  await expect(comment.locator('.tb-tip')).toHaveText('Comment — run an audit first');
+  await expect(comment).toHaveAttribute('aria-describedby', 'why-comment');
+  await expect(comment.locator('.tb-why')).toHaveText('run an audit first');
+
+  // Dragged hard right, where a centred tip would hang off the window.
+  const grip = toolbar(page).locator('.grip');
+  const from = (await grip.boundingBox())!;
+  await page.mouse.move(from.x + 4, from.y + 4);
+  await page.mouse.down();
+  await page.mouse.move(880, 40, { steps: 8 });
+  await page.mouse.up();
+
+  const close = toolbar(page).getByRole('button', { name: 'Close Thursday' });
+  await close.hover();
+  // Polled, not measured once: the nudge is applied to the transform, which
+  // transitions, so a single reading taken straight after hover catches the
+  // tip mid-slide and is a couple of pixels out.
+  await expect
+    .poll(async () => {
+      const box = await close.locator('.tb-tip').boundingBox();
+      return box ? Math.round(box.x + box.width) : null;
+    }, { timeout: 3000 })
+    .toBeLessThanOrEqual(900);
+  const settled = (await close.locator('.tb-tip').boundingBox())!;
+  expect(settled.x, 'the tooltip runs off the left of the window').toBeGreaterThanOrEqual(0);
+
+  // And once there is an audit the reason goes away with the greying.
+  const panel = await context.newPage();
+  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await page.bringToFront();
+  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
+
+  await expect(comment).toBeEnabled();
+  await expect(comment).not.toHaveAttribute('aria-describedby', /./);
+  await expect(comment.locator('.tb-tip')).toHaveText('Comment');
+});

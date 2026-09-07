@@ -211,7 +211,10 @@ button:focus-visible {
   white-space: nowrap;
   box-shadow: 0 2px 6px rgba(0, 0, 0, 0.22);
   opacity: 0;
-  transform: translate(-50%, -3px);
+  /* Centred on the button, then nudged by however much it would otherwise hang
+     off the window. The nudge is set by clampTip in toolbar.ts. */
+  --tb-shift: 0px;
+  transform: translate(calc(-50% + var(--tb-shift)), -3px);
   /* Never a click target: it sits under the pointer that summoned it. */
   pointer-events: none;
   transition: opacity 90ms ease, transform 90ms ease;
@@ -219,7 +222,7 @@ button:focus-visible {
 .tb-btn:hover .tb-tip,
 .tb-btn:focus-visible .tb-tip {
   opacity: 1;
-  transform: translate(-50%, 0);
+  transform: translate(calc(-50% + var(--tb-shift)), 0);
 }
 @media (prefers-reduced-motion: reduce) {
   .tb-tip { transition: none; }
