@@ -1,7 +1,8 @@
 import { assertNever, type ErrorCode } from '../shared/result';
-import type { Envelope, ThursdayMessage } from '../shared/messaging/protocol';
+import type { AnnotationSubmission, Envelope, ThursdayMessage } from '../shared/messaging/protocol';
 import { isEnvelope } from '../shared/messaging/protocol';
 import { checkUrl } from '../shared/utils/url';
+import { annotationFromSubmission, notesBucketId, saveAnnotation } from '../storage/annotations';
 import { ACTIVATE_COMMAND } from '../shared/constants/product';
 
 /**
@@ -203,6 +204,42 @@ chrome.runtime.onConnect.addListener((port) => {
   port.disconnect();
 });
 
+/**
+ * Stores a comment when no panel is open to store it.
+ *
+ * Into the origin's notes bucket, because this side cannot know which audit a
+ * panel would have chosen -- and a note in that bucket is adopted by the next
+ * audit of the origin regardless of who wrote it.
+ *
+ * The content script is answered either way. It retries until it hears
+ * something, so silence here would leave a card saying "Adding..." until its
+ * own deadline, which is the failure this whole path exists to remove.
+ */
+async function storeWithoutPanel(tabId: number, submission: AnnotationSubmission): Promise<void> {
+  const reply = (payload: ThursdayMessage & { type: 'ANNOTATION_SAVED' }): void => {
+    toContent(tabId, payload);
+  };
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const origin = tab.url ? new URL(tab.url).origin : null;
+    if (!origin) {
+      reply({ type: 'ANNOTATION_SAVED', payload: { ok: false, detail: 'This page cannot be commented on.' } });
+      return;
+    }
+    const { annotation, blobs } = annotationFromSubmission(submission, notesBucketId(origin));
+    await saveAnnotation(annotation, blobs);
+    reply({ type: 'ANNOTATION_SAVED', payload: { ok: true } });
+    // Any panel that has appeared in the meantime is told to look, because it
+    // may have already checked and found nothing.
+    toPanels({ type: 'COMMENTS_CHANGED' }, tabId);
+  } catch {
+    reply({
+      type: 'ANNOTATION_SAVED',
+      payload: { ok: false, detail: 'That comment could not be saved on this machine.' },
+    });
+  }
+}
+
 /** Content -> panel. The worker never interprets, it only forwards. */
 function routeFromContent(tabId: number, message: ThursdayMessage): void {
   switch (message.type) {
@@ -217,11 +254,29 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'ELEMENT_RECT':
     case 'ANNOTATION_TARGET':
     case 'ANNOTATION_STATE':
-    case 'ANNOTATION_SUBMITTED':
     case 'BAND_READY':
     case 'TOOLBAR_ACTION':
     case 'ERROR':
       toPanels(message, tabId);
+      return;
+    case 'ANNOTATION_SUBMITTED':
+      /*
+       * The one thing the worker stores rather than forwards, and only when
+       * there is nobody to forward it to.
+       *
+       * The side panel owns the database, which quietly made "the panel is
+       * open" a requirement for writing a comment -- a strange thing to be
+       * true of a tool whose composer is on the page. Closing the panel and
+       * writing a note lost the note, and the card could do nothing better
+       * than say so.
+       *
+       * With a panel connected nothing changes: it stores, because it knows
+       * which audit is open and this does not. Without one, the note goes to
+       * the origin's own bucket and the next audit adopts it -- the same place
+       * a note written before any audit goes.
+       */
+      if (panelPorts.size > 0) toPanels(message, tabId);
+      else void storeWithoutPanel(tabId, message.payload);
       return;
     // Panel-bound or worker-bound message types never originate in the page.
     case 'ACTIVATE_PAGE':
@@ -242,6 +297,10 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'CANCEL_ANNOTATION':
     case 'CAPTURE_BAND':
     case 'ANNOTATION_SAVED':
+      return;
+    case 'COMMENTS_CHANGED':
+      // Sent by this worker, never received from a page.
+      toPanels(message, tabId);
       return;
     default:
       assertNever(message, 'routeFromContent');
@@ -296,6 +355,7 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'ANNOTATION_STATE':
     case 'ANNOTATION_SUBMITTED':
     case 'BAND_READY':
+    case 'COMMENTS_CHANGED':
     case 'TOOLBAR_ACTION':
     case 'ERROR':
       return;

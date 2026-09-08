@@ -89,6 +89,16 @@ export type ThursdayMessage =
   | { type: 'ANNOTATION_SUBMITTED'; payload: AnnotationSubmission }
   /** Panel -> page: stored, or refused with a reason to show in the card. */
   | { type: 'ANNOTATION_SAVED'; payload: { ok: true } | { ok: false; detail: string } }
+  /**
+   * Worker -> panel: a comment was written to storage by something else.
+   *
+   * The worker stores comments when no panel is open to store them, so a panel
+   * that opens or reconnects afterwards has to go and look. It does that on
+   * reconnect anyway -- but the two race: the panel can reconnect, find the
+   * notes bucket empty, and only then have the worker's write land. This is
+   * what closes that window.
+   */
+  | { type: 'COMMENTS_CHANGED' }
   // -- screenshot crops (Sprint 5) -------------------------------------------
   /** Panel -> page: bring an element on screen and say exactly where it landed. */
   | { type: 'REQUEST_ELEMENT_RECT'; payload: { findingId: string; ref: ElementReference } }

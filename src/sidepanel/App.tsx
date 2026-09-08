@@ -179,13 +179,6 @@ export function App(): React.ReactElement {
           /* nothing stored, or no storage: the audit still opens */
         });
       }
-      // Notes written before this audit existed belong to it now. Same
-      // mechanism as carrying comments across a re-audit.
-      if (result.audit.origin) {
-        await carryComments(notesBucketId(result.audit.origin), result.audit.id).catch(() => {
-          /* nothing to carry, or no storage */
-        });
-      }
       setActive(next);
       setDiff(
         comparable
@@ -321,6 +314,34 @@ export function App(): React.ReactElement {
   useEffect(() => {
     if (page.annotationTarget) setCommentTarget(page.annotationTarget);
   }, [page.annotationTarget]);
+
+  /**
+   * Notes about this site belong to whatever audit is now open.
+   *
+   * Covers three ways a note can be waiting: written before any audit ran,
+   * written while the panel was closed (the service worker stores those), or
+   * left over from a re-audit. Same carryComments in every case, and then a
+   * re-read so they appear without the panel being reopened.
+   *
+   * Runs for reopened audits too, not just fresh ones -- a note is about the
+   * site, and the audit on screen is the one it should be attached to. And it
+   * runs again after every reconnect, because that is exactly when the worker
+   * has been storing comments this panel could not be told about.
+   *
+   * Cheap to repeat: carryComments moves nothing when the bucket is empty.
+   */
+  useEffect(() => {
+    const auditId = active?.audit.id;
+    const site = active?.audit.origin;
+    if (!auditId || !site) return;
+    void carryComments(notesBucketId(site), auditId)
+      .then((moved) => {
+        if (moved > 0) comments.reload();
+      })
+      .catch(() => {
+        /* nothing to carry, or no storage */
+      });
+  }, [active?.audit.id, active?.audit.origin, page.reconnects, page.commentsChanged]);
 
   /**
    * A comment finished on the page becomes a stored comment here.

@@ -49,7 +49,15 @@ const BUDGETS = [
    * dependency arriving.
    */
   { pattern: /^content\.js$/, kb: 90, note: 'injected into every audited page' },
-  { pattern: /^service-worker\.js$/, kb: 20, note: 'a router, nothing more' },
+  /*
+   * Still small, but no longer only a router.
+   *
+   * It stores a comment when no side panel is open to store it, because the
+   * panel owning the database made "the panel is open" a requirement for
+   * writing one -- a strange thing to be true of a tool whose composer is on
+   * the page. That pulls in the annotation store and the base64 decoder.
+   */
+  { pattern: /^service-worker\.js$/, kb: 20, note: 'a router, plus storing a comment when no panel is open' },
   { pattern: /^assets\/vendor\.js$/, kb: 240, note: 'React and React DOM' },
   { pattern: /^assets\/sidepanel\.js$/, kb: 200, note: 'the panel, the rules, both report writers and the PDF font metrics' },
 ];

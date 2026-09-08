@@ -161,21 +161,89 @@ test('a comment written after the worker is collected still lands', async ({
   await expect(panel.locator('.comment-row')).toHaveCount(1);
 });
 
-test('a comment with nothing listening gives up and keeps what was written', async ({
+test('a comment written with the side panel closed is still kept', async ({
   openFixture,
   activate,
   extensionId,
   context,
 }) => {
   /*
-   * The safety net. The panel can simply be closed, and then nothing is at the
-   * other end of the round trip at all -- no reconnect helps with that. The
-   * card has to be able to give up, say so, and still be holding the words.
+   * The panel owning the database quietly made "the panel is open" a
+   * requirement for writing a comment, which is a strange thing to be true of
+   * a tool whose composer is on the page. Closing the panel and writing a note
+   * lost the note, and the card could do no better than say so -- there was a
+   * test here asserting exactly that failure message, written as though it
+   * were acceptable.
+   *
+   * The service worker stores it now, into the site's own notes bucket, and
+   * whatever audit opens next adopts it.
+   */
+  const page = await openFixture('accessibility.html');
+  await activate(page);
+
+  const panel = await openPanel(context, extensionId);
+  await page.bringToFront();
+  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
+  await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+    timeout: 60_000,
+  });
+
+  // The only thing that could have stored it, gone.
+  await panel.close();
+
+  await page.bringToFront();
+  await page.locator('thursday-root [data-action="comment"]').click();
+  /*
+   * Aimed at the middle of the paragraph, not its corner.
+   *
+   * A finding's pin sits on the top-left corner of the element it marks, and a
+   * pin is one of Thursday's own controls -- so a pick there hits the pin and
+   * the picker rightly refuses to select its own UI. Cost me an hour: the test
+   * failed and the flow it was testing was fine.
+   */
+  const target = (await page.locator('p.faint').boundingBox())!;
+  const at = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.click(at.x, at.y);
+
+  const card = page.locator('thursday-root .cm-card');
+  await expect(card).toBeVisible();
+  await page.locator('thursday-root .cm-body').fill('Written with the panel shut.');
+  await page.locator('thursday-root .cm-add').click();
+
+  // Accepted, not refused. Nothing to read, nothing to retry, nothing lost.
+  await expect(card).toBeHidden({ timeout: 20_000 });
+
+  // And a panel opened afterwards has it, without a re-audit.
+  const later = await openPanel(context, extensionId);
+  await later.locator('.history-open').first().click();
+  await expect(later.locator('.comment-body')).toHaveText('Written with the panel shut.');
+});
+
+test('a comment gives up rather than waiting forever when the extension goes away', async ({
+  openFixture,
+  activate,
+  extensionId,
+  context,
+  worker,
+}) => {
+  /*
+   * The safety net behind all of it.
+   *
+   * The panel stores when it is open and the worker stores when it is not, so
+   * "nobody is listening" is hard to reach on purpose. What is still reachable
+   * is the extension itself going away under an open card -- an update or a
+   * reload orphans the content script, and its messaging throws from then on.
+   * The card has to stop claiming to work, say so, and still be holding the
+   * words.
+   *
+   * Nothing touches the worker fixture after the reload: evaluating on a
+   * replaced worker hangs rather than throwing.
    */
   const page = await openFixture('accessibility.html');
   await activate(page);
   const panel = await openPanel(context, extensionId);
-
   await page.bringToFront();
   await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
   await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
@@ -186,17 +254,17 @@ test('a comment with nothing listening gives up and keeps what was written', asy
   await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
   await page.bringToFront();
   await expect(page.locator('thursday-root .cm-card')).toBeVisible();
-  await page.locator('thursday-root .cm-body').fill('Nobody is listening to this.');
+  await page.locator('thursday-root .cm-body').fill('Typed as the extension reloaded.');
 
-  // The only listener, gone.
-  await panel.close();
+  // The extension, replaced under the open card.
+  await worker.evaluate(() => chrome.runtime.reload());
   await page.locator('thursday-root .cm-add').click();
 
   await expect(page.locator('thursday-root .cm-error')).toContainText('No answer from the panel', {
-    timeout: 20_000,
+    timeout: 25_000,
   });
   // Not still claiming to be working, and the words are still there.
   await expect(page.locator('thursday-root .cm-add')).toHaveText('Add');
   await expect(page.locator('thursday-root .cm-add')).toBeEnabled();
-  await expect(page.locator('thursday-root .cm-body')).toHaveValue('Nobody is listening to this.');
+  await expect(page.locator('thursday-root .cm-body')).toHaveValue('Typed as the extension reloaded.');
 });

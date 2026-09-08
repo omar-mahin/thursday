@@ -51,6 +51,16 @@ export type PageState = {
   band: (CaptureBandReply & { at: number }) | null;
   /** The last comment the page finished writing, waiting to be stored. */
   submitted: (AnnotationSubmission & { at: number }) | null;
+  /**
+   * How many times the port has been re-established.
+   *
+   * Watched rather than ignored because things happen while a panel is
+   * unreachable: the service worker stores comments itself when it cannot
+   * forward them, so a reconnect is the panel's cue to go and look.
+   */
+  reconnects: number;
+  /** Bumped when something outside this panel wrote a comment. */
+  commentsChanged: number;
 };
 
 export type LogEntry = { at: number; direction: 'in' | 'out'; type: ThursdayMessage['type'] };
@@ -102,6 +112,8 @@ const INITIAL: PageState = {
   elementRect: null,
   band: null,
   submitted: null,
+  reconnects: 0,
+  commentsChanged: 0,
 };
 
 const LOG_LIMIT = 40;
@@ -238,6 +250,9 @@ export function usePageConnection(): {
             lastToolbarAction: { action: message.payload.action, at: Date.now() },
           }));
           return;
+        case 'COMMENTS_CHANGED':
+          setPage((state) => ({ ...state, commentsChanged: state.commentsChanged + 1 }));
+          return;
         case 'ANNOTATION_SUBMITTED':
           // Stamped: two comments can be written in the same millisecond of
           // wall clock only in tests, but a second one with identical text
@@ -326,6 +341,7 @@ export function usePageConnection(): {
       attempts += 1;
       retry = self.setTimeout(() => {
         open();
+        setPage((state) => ({ ...state, reconnects: state.reconnects + 1 }));
         // Ask the page what it is, so the panel's idea of it is true again and
         // not just its socket.
         portRef.current?.post({ type: 'GET_PAGE_STATUS' });

@@ -103,8 +103,9 @@ words are all in view at once, instead of you looking away to a box somewhere el
 is about the flow, not about one button, and Thursday will not make you pin it to an arbitrary
 element.
 
-A note written before you audit anything is kept against that site, and the next audit of it adopts
-the note — the same mechanism that carries comments across a re-audit. So you can open a page, write
+You do not need the side panel open either — if it is closed, the extension's background worker
+stores the comment itself. A note written before you audit anything is kept against that site, and
+the next audit of it adopts the note — the same mechanism that carries comments across a re-audit. So you can open a page, write
 down what you noticed, and audit it afterwards.
 
 Each comment carries **your name** and a **priority** — Normal, Medium or High. Both are yours

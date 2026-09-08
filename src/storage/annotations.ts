@@ -1,4 +1,7 @@
+import type { AnnotationSubmission } from '../shared/messaging/protocol';
 import type { Annotation, AnnotationAttachment } from '../shared/types';
+import { dataUrlToBlob } from '../shared/utils/base64';
+import { newId } from '../shared/utils/id';
 import {
   requestAsPromise,
   STORE_ANNOTATIONS,
@@ -142,6 +145,68 @@ export async function deleteAnnotationsFor(auditId: string): Promise<void> {
  * saved file ever contains one of these ids.
  */
 export const notesBucketId = (origin: string): string => `notes:${origin}`;
+
+/**
+ * Turns what the page sent into an annotation and its bytes.
+ *
+ * Shared because two things store comments now. The side panel does it when it
+ * is open, and the service worker does it when it is not -- because the panel
+ * owning storage meant closing the panel made commenting impossible, which is
+ * a strange thing to be true of a tool whose composer is on the page.
+ *
+ * One mapping, so the two cannot disagree about which fields survive.
+ */
+export function annotationFromSubmission(
+  submission: AnnotationSubmission,
+  auditId: string,
+  now = Date.now(),
+): { annotation: Annotation; blobs: Map<string, Blob> } {
+  const id = newId();
+  const blobs = new Map<string, Blob>();
+  const attachments: AnnotationAttachment[] = [];
+
+  for (const image of submission.images) {
+    const blob = dataUrlToBlob(image.dataUrl);
+    // An image that will not decode is dropped rather than stored as a row
+    // with no bytes. The words are the part worth keeping.
+    if (!blob) continue;
+    const attachmentId = newId();
+    blobs.set(attachmentId, blob);
+    attachments.push({
+      id: attachmentId,
+      annotationId: id,
+      auditId,
+      mime: blob.type || image.mime,
+      bytes: blob.size,
+      width: 0,
+      height: 0,
+      source: 'file',
+      createdAt: now,
+    });
+  }
+
+  const annotation: Annotation = {
+    id,
+    auditId,
+    body: submission.body.trim(),
+    attachments,
+    createdAt: now,
+    updatedAt: now,
+  };
+  if (submission.priority) annotation.priority = submission.priority;
+  if (submission.author.trim() !== '') annotation.author = submission.author.trim();
+  if (submission.target) {
+    annotation.elementRef = submission.target.reference;
+    annotation.documentRect = submission.target.documentRect;
+    // The index and its snapshot travel together or not at all: an index with
+    // no snapshot behind it is a number that happens to be in range.
+    if (submission.target.elementIndex !== undefined && submission.target.snapshotId) {
+      annotation.elementIndex = submission.target.elementIndex;
+      annotation.snapshotId = submission.target.snapshotId;
+    }
+  }
+  return { annotation, blobs };
+}
 
 export async function carryComments(fromAuditId: string, toAuditId: string): Promise<number> {
   if (fromAuditId === toAuditId) return 0;

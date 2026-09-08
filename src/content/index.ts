@@ -287,6 +287,7 @@ function install(): void {
       case 'ELEMENT_RECT':
       case 'BAND_READY':
       case 'ANNOTATION_SUBMITTED':
+      case 'COMMENTS_CHANGED':
       case 'TOOLBAR_ACTION':
       case 'ERROR':
         return;

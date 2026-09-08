@@ -106,8 +106,12 @@ export function useAnnotations(source: AnnotationSource | null): AnnotationsStat
   /** attachmentId -> JPEG, for the PDF. */
   pdfImages(): Promise<Record<string, PdfImage>>;
   dismissError(): void;
+  /** Re-reads from storage, for comments written while the panel was closed. */
+  reload(): void;
 } {
   const [state, setState] = useState<AnnotationsState>(EMPTY);
+  /** Bumped by `reload()` to re-read from storage. */
+  const [reloads, setReloads] = useState(0);
   const blobs = useRef(new Map<string, Blob>());
   const urls = useRef(new Map<string, string>());
   const auditRef = useRef<string | null>(source?.auditId ?? null);
@@ -199,7 +203,7 @@ export function useAnnotations(source: AnnotationSource | null): AnnotationsStat
     return () => {
       cancelled = true;
     };
-  }, [source?.auditId, source?.openedAt, clear, mutate, putBlob]);
+  }, [source?.auditId, source?.openedAt, reloads, clear, mutate, putBlob]);
 
   // Object URLs outlive the component otherwise.
   useEffect(
@@ -433,5 +437,7 @@ export function useAnnotations(source: AnnotationSource | null): AnnotationsStat
     setState((current) => ({ ...current, error: null }));
   }, []);
 
-  return { ...state, add, edit, attach, detach, remove, dataUrls, pdfImages, dismissError };
+  const reload = useCallback(() => setReloads((count) => count + 1), []);
+
+  return { ...state, add, edit, attach, detach, remove, dataUrls, pdfImages, dismissError, reload };
 }
