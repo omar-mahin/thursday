@@ -296,7 +296,6 @@ export function usePageConnection(): {
         case 'FOCUS_ELEMENT':
         case 'CAPTURE_BAND':
         case 'ANNOTATION_SAVED':
-        case 'COMMENTS_READY':
         case 'REQUEST_ELEMENT_RECT':
         case 'START_ANNOTATION':
         case 'CANCEL_ANNOTATION':

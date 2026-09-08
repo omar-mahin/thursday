@@ -200,29 +200,3 @@ test('a comment with nothing listening gives up and keeps what was written', asy
   await expect(page.locator('thursday-root .cm-add')).toBeEnabled();
   await expect(page.locator('thursday-root .cm-body')).toHaveValue('Nobody is listening to this.');
 });
-
-test('Comment is not pressable until there is an audit to attach one to', async ({
-  openFixture,
-  activate,
-  extensionId,
-  context,
-}) => {
-  /*
-   * The dead end this replaced: the button was pressable, the card opened, you
-   * typed, and only then were you told it could not be kept. Same mistake the
-   * greyed-out Report button was, with the added insult of having written
-   * something first.
-   */
-  const page = await openFixture('accessibility.html');
-  await activate(page);
-
-  const comment = page.locator('thursday-root [data-action="comment"]');
-  await expect(comment).toBeDisabled();
-
-  const panel = await openPanel(context, extensionId);
-  await page.bringToFront();
-  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
-  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
-
-  await expect(comment).toBeEnabled();
-});

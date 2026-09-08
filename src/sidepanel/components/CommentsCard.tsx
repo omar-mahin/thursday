@@ -1,4 +1,5 @@
 import { useRef, useState } from 'react';
+import { PRODUCT_NAME } from '../../shared/constants/product';
 import type { AnnotationTarget } from '../../shared/messaging/protocol';
 import type { Annotation } from '../../shared/types';
 import { commentLabel } from '../../shared/utils/labels';
@@ -42,7 +43,7 @@ export function CommentsCard({
 }: {
   comments: ReturnType<typeof useAnnotations>;
   activated: boolean;
-  /** False until there is an audit for the comment to belong to. */
+  /** False until there is a page to comment on. */
   canComment: boolean;
   /** True while the page is waiting for the user to click an element. */
   picking: boolean;
@@ -72,7 +73,7 @@ export function CommentsCard({
 
       {!canComment ? (
         <p className="hint" style={{ margin: 0 }}>
-          Run or open an audit first — a comment is kept with the audit it was written on.
+          Activate {PRODUCT_NAME} on a page to comment on it.
         </p>
       ) : (
         <>

@@ -9,7 +9,7 @@ import { renderReport, reportFileName } from '../report/render';
 import { buildAuditPdf, pdfFileName } from '../pdf/report';
 import { auditFileName, buildAuditFile, serializeAuditFile } from '../storage/file';
 import { saveFile } from '../storage/download';
-import { carryComments } from '../storage/annotations';
+import { carryComments, notesBucketId } from '../storage/annotations';
 import { dataUrlToBlob } from '../shared/utils/base64';
 import type { AnnotationTarget } from '../shared/messaging/protocol';
 import type { Annotation, Audit, Finding, Severity } from '../shared/types';
@@ -79,20 +79,31 @@ export function App(): React.ReactElement {
    * read as the reload key -- so marking an audit as saved does not look like
    * a new audit and discard what somebody just typed.
    */
-  const commentSource = useMemo<AnnotationSource | null>(
-    () =>
-      active
-        ? {
-            auditId: active.audit.id,
-            openedAt: active.openedAt,
-            persisted: active.persisted,
-            imported: active.annotations
-              ? { annotations: active.annotations, attachments: active.attachments ?? {} }
-              : null,
-          }
-        : null,
-    [active],
-  );
+  const commentSource = useMemo<AnnotationSource | null>(() => {
+    if (active) {
+      return {
+        auditId: active.audit.id,
+        openedAt: active.openedAt,
+        persisted: active.persisted,
+        imported: active.annotations
+          ? { annotations: active.annotations, attachments: active.attachments ?? {} }
+          : null,
+      };
+    }
+    /*
+     * No audit open, so notes go to this origin's own bucket.
+     *
+     * Requiring an audit before somebody may write down what they noticed was
+     * an implementation detail leaking into the product -- and it read as a
+     * refusal, twice. The next audit of this origin adopts whatever is in here.
+     *
+     * `openedAt` is fixed rather than a timestamp: it is the hook's reload key,
+     * and a fresh value on every render would throw away what is being typed.
+     */
+    return origin
+      ? { auditId: notesBucketId(origin), openedAt: 0, persisted: true, imported: null }
+      : null;
+  }, [active, origin]);
   const comments = useAnnotations(commentSource);
 
   /**
@@ -166,6 +177,13 @@ export function App(): React.ReactElement {
       if (comparable) {
         await carryComments(comparable.audit.id, result.audit.id).catch(() => {
           /* nothing stored, or no storage: the audit still opens */
+        });
+      }
+      // Notes written before this audit existed belong to it now. Same
+      // mechanism as carrying comments across a re-audit.
+      if (result.audit.origin) {
+        await carryComments(notesBucketId(result.audit.origin), result.audit.id).catch(() => {
+          /* nothing to carry, or no storage */
         });
       }
       setActive(next);
@@ -304,18 +322,6 @@ export function App(): React.ReactElement {
     if (page.annotationTarget) setCommentTarget(page.annotationTarget);
   }, [page.annotationTarget]);
 
-  /*
-   * Keep the page's Comment button in step with whether there is an audit.
-   *
-   * Sent on activation as well as on change, because the content script starts
-   * with the button off and a page activated after an audit already exists
-   * would otherwise never be told it can comment.
-   */
-  useEffect(() => {
-    if (!page.activated) return;
-    send({ type: 'COMMENTS_READY', payload: { ready: active !== null } });
-  }, [page.activated, active !== null, send]);
-
   /**
    * A comment finished on the page becomes a stored comment here.
    *
@@ -352,18 +358,6 @@ export function App(): React.ReactElement {
             return new File([blob], image.name || `pasted-${index + 1}`, { type: image.mime });
           }),
         );
-        if (!active) {
-          // Said precisely, because "could not be saved" gives somebody who
-          // has just written a paragraph nothing to do about it.
-          send({
-            type: 'ANNOTATION_SAVED',
-            payload: {
-              ok: false,
-              detail: 'Run an audit first — a comment is kept with the audit it was written on.',
-            },
-          });
-          return;
-        }
         const saved = await comments.add({
           body: submission.body,
           priority: submission.priority,
@@ -741,7 +735,7 @@ export function App(): React.ReactElement {
             <CommentsCard
               comments={comments}
               activated={page.activated}
-              canComment={active !== null}
+              canComment={origin !== null}
               picking={page.annotating}
               target={commentTarget}
               activeId={openComment}

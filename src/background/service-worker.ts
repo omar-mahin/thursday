@@ -242,7 +242,6 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'CANCEL_ANNOTATION':
     case 'CAPTURE_BAND':
     case 'ANNOTATION_SAVED':
-    case 'COMMENTS_READY':
       return;
     default:
       assertNever(message, 'routeFromContent');
@@ -275,7 +274,6 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'START_ANNOTATION':
     case 'CANCEL_ANNOTATION':
     case 'ANNOTATION_SAVED':
-    case 'COMMENTS_READY':
     case 'CAPTURE_BAND': {
       const tabId = await targetTab();
       if (tabId === undefined || !toContent(tabId, message)) panelError('NOT_ACTIVATED');

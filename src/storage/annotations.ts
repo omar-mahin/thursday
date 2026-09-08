@@ -127,6 +127,22 @@ export async function deleteAnnotationsFor(auditId: string): Promise<void> {
  * they refer to a snapshot that is now gone, `Annotation.snapshotId` says so,
  * and the pin is placed by searching the live page instead.
  */
+/**
+ * Where a comment goes when there is no audit yet.
+ *
+ * Comments are stored against the audit they were written on, which made
+ * "write a note about this page" impossible until you had run one -- and being
+ * told to run a thirty-rule audit before you may write down what you noticed is
+ * an implementation detail wearing a product's clothes.
+ *
+ * So notes get a home of their own, per origin, and the next audit of that
+ * origin adopts them through the same carryComments a re-audit already uses.
+ * Nothing else changes: they are ordinary annotations in the ordinary store,
+ * and by the time anything can be exported they belong to a real audit, so no
+ * saved file ever contains one of these ids.
+ */
+export const notesBucketId = (origin: string): string => `notes:${origin}`;
+
 export async function carryComments(fromAuditId: string, toAuditId: string): Promise<number> {
   if (fromAuditId === toAuditId) return 0;
   return transact([STORE_ANNOTATIONS, STORE_ATTACHMENTS], 'readwrite', async (transaction) => {

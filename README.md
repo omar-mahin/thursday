@@ -96,12 +96,16 @@ apart everywhere, on purpose. A comment has no severity and no confidence, sits 
 of the report, and is labelled as an opinion, because the moment somebody's judgement inherits the
 authority of a contrast ratio the whole tool is worth less.
 
-Press **Comment on an element**, click the thing you mean, and a card opens **on the page, next to
-it** — which is the whole point of an on-page annotation tool: the element, the marker and your
+You do not need to run an audit first. Press **Comment on an element**, click the thing you mean,
+and a card opens **on the page, next to it** — which is the whole point of an on-page annotation tool: the element, the marker and your
 words are all in view at once, instead of you looking away to a box somewhere else. Or press
 **Comment on the page** and write without picking anything: "the checkout asks for the email twice"
 is about the flow, not about one button, and Thursday will not make you pin it to an arbitrary
 element.
+
+A note written before you audit anything is kept against that site, and the next audit of it adopts
+the note — the same mechanism that carries comments across a re-audit. So you can open a page, write
+down what you noticed, and audit it afterwards.
 
 Each comment carries **your name** and a **priority** — Normal, Medium or High. Both are yours
 rather than Thursday's: the name is what you typed about yourself in settings, so a report handed to

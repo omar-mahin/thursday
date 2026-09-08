@@ -102,14 +102,68 @@ async function writeOnPage(
   await panel.bringToFront();
 }
 
-test('there is nowhere to write a comment until there is an audit to attach it to', async ({
+test('there is nowhere to write a comment until there is a page to write it on', async ({
   extensionId,
   context,
 }) => {
   const panel = await openPanel(context, extensionId);
-  await expect(card(panel)).toContainText('Run or open an audit first');
+  await expect(card(panel)).toContainText('Activate Thursday on a page');
   await expect(panel.getByRole('button', { name: 'Comment on an element' })).toHaveCount(0);
 });
+
+testWithHostAccess(
+  'a note written before any audit is kept, and the audit adopts it',
+  async ({ openFixture, activate, extensionId, context }) => {
+    /*
+     * Comments used to require an audit, because a comment is stored against
+     * the audit it was written on. That is an implementation detail, and as a
+     * product rule it was wrong: you open Thursday on a page, see something,
+     * and want to write it down -- being told to run a thirty-rule audit first
+     * is a refusal dressed as a workflow.
+     *
+     * Notes now go to a home of their own per origin, and the next audit of
+     * that origin adopts them through the same mechanism a re-audit already
+     * uses to carry comments forward.
+     */
+    const page = await openFixture('cro.html');
+    await activate(page);
+    const panel = await openPanel(context, extensionId);
+
+    // No audit anywhere yet.
+    await expect(panel.locator('.history-row')).toHaveCount(0);
+    await expect(panel.getByRole('button', { name: 'Full audit' })).toBeEnabled();
+
+    // And Comment is available on the page, not greyed out.
+    await expect(page.locator('thursday-root [data-action="comment"]')).toBeEnabled();
+
+    await writeOnPage(page, panel, { text: 'Noticed before auditing anything.', priority: 'high' });
+    await expect(panel.locator('.comment-body')).toHaveText('Noticed before auditing anything.');
+    await expect(panel.locator('.comment-priority')).toHaveText('High');
+
+    // Now audit. The note is part of it rather than stranded beside it.
+    await page.bringToFront();
+    await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+    await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
+    await settle(panel);
+
+    await expect(panel.locator('.comment-body')).toHaveText('Noticed before auditing anything.');
+    await expect(panel.locator('.comment-row')).toHaveCount(1);
+
+    // Including in the file, which is where it has to end up to be any use --
+    // and the note's own bucket id must not travel in one.
+    const download = await Promise.all([
+      panel.waitForEvent('download'),
+      panel.getByRole('button', { name: 'Save audit' }).click(),
+    ]).then(([event]) => event);
+    const text = readFileSync(await download.path(), 'utf8');
+    const parsed = JSON.parse(text) as {
+      audit?: { id?: string };
+      annotations?: { auditId?: string; body?: string }[];
+    };
+    expect(parsed.annotations?.[0]?.body).toBe('Noticed before auditing anything.');
+    expect(text).not.toContain('notes:');
+  },
+);
 
 testWithHostAccess(
   'a comment can be anchored to an element by clicking it on the page',

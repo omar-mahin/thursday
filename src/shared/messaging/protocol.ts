@@ -89,16 +89,6 @@ export type ThursdayMessage =
   | { type: 'ANNOTATION_SUBMITTED'; payload: AnnotationSubmission }
   /** Panel -> page: stored, or refused with a reason to show in the card. */
   | { type: 'ANNOTATION_SAVED'; payload: { ok: true } | { ok: false; detail: string } }
-  /**
-   * Panel -> page: whether there is somewhere to put a comment yet.
-   *
-   * A comment is stored against the audit it was written on, so until there is
-   * one there is nowhere for it to go. Without this the toolbar's Comment
-   * button was pressable, the card opened, the user typed, and only then were
-   * they told it could not be kept -- the same dead end the greyed-out Report
-   * button used to be, with the added insult of having written something first.
-   */
-  | { type: 'COMMENTS_READY'; payload: { ready: boolean } }
   // -- screenshot crops (Sprint 5) -------------------------------------------
   /** Panel -> page: bring an element on screen and say exactly where it landed. */
   | { type: 'REQUEST_ELEMENT_RECT'; payload: { findingId: string; ref: ElementReference } }

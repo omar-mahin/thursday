@@ -11,16 +11,7 @@ export type ToolbarOptions = {
 export type Toolbar = {
   element: HTMLElement;
   setPressed(action: ToolbarAction, pressed: boolean): void;
-  /**
-   * Turns a button on or off, with a reason when turning it off.
-   *
-   * The reason is not optional decoration. A greyed-out button with a tooltip
-   * that only repeats its own name tells the user nothing about what to do --
-   * it is the same dead end as a button that leads nowhere, reached from the
-   * other side. Whatever disables a button knows why, and this is where that
-   * gets said.
-   */
-  setEnabled(action: ToolbarAction, enabled: boolean, reason?: string): void;
+  setEnabled(action: ToolbarAction, enabled: boolean): void;
   announce(text: string): void;
   /**
    * Centres the toolbar on the viewport.
@@ -105,8 +96,6 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
   element.append(grip, brand, separator());
 
   const buttons = new Map<ToolbarAction, HTMLButtonElement>();
-  /** The plain label, so a reason can be appended to it and removed again. */
-  const labels = new Map<ToolbarAction, string>();
 
   /**
    * One icon button.
@@ -130,31 +119,23 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
     // does not.
     if (spec.toggle) button.setAttribute('aria-pressed', 'false');
 
-    labels.set(spec.action, spec.label);
     button.append(createIcon(TOOLBAR_ICONS[spec.action]));
     const tip = document.createElement('span');
     tip.className = 'tb-tip';
     tip.setAttribute('aria-hidden', 'true');
     tip.textContent = spec.label;
-    // Carries the reason for a disabled button to assistive technology. Empty
-    // and referenced by nothing until setEnabled fills it in.
-    const why = document.createElement('span');
-    why.className = 'sr tb-why';
-    why.id = `why-${spec.action}`;
-    button.append(tip, why);
+    button.append(tip);
 
     /*
      * Keeps the tip on screen.
      *
      * It is centred on its button by CSS, which is right until the toolbar is
      * near an edge -- and the toolbar is draggable, so it often is. Then half
-     * the tip is outside the window and simply not there. "Close Thursday" was
-     * already wide enough for this to bite; adding a reason to a disabled
-     * button's tip made it certain.
+     * the tip is outside the window and simply not there. "Close Thursday" is
+     * wide enough for this to bite on its own.
      *
-     * Measured on the way in rather than on a timer, because the text changes:
-     * a button can be disabled with a reason and enabled again, and the width
-     * that needs clamping is whatever it says right now.
+     * Measured on the way in rather than once at build time, because the
+     * toolbar moves and the window resizes under it.
      */
     const clampTip = (): void => {
       tip.style.setProperty('--tb-shift', '0px');
@@ -292,26 +273,10 @@ export function createToolbar(options: ToolbarOptions): Toolbar {
       // was never declared a toggle.
       if (button?.hasAttribute('aria-pressed')) button.setAttribute('aria-pressed', String(pressed));
     },
-    setEnabled(action, enabled, reason) {
+    setEnabled(action, enabled) {
       const button = buttons.get(action);
       if (!button) return;
       button.disabled = !enabled;
-      const label = labels.get(action) ?? '';
-      const tip = button.querySelector('.tb-tip');
-      if (tip) tip.textContent = !enabled && reason ? `${label} — ${reason}` : label;
-      /*
-       * The reason is a description, not part of the name.
-       *
-       * Putting it in the aria-label was the first attempt and it was wrong
-       * twice over: a control's name should not change under the user, and
-       * "Comment - run an audit first" contains the word "audit", which made
-       * every query for the Audit button ambiguous. A description says the
-       * same thing to a screen reader without renaming anything.
-       */
-      const because = button.querySelector('.tb-why');
-      if (because) because.textContent = !enabled && reason ? reason : '';
-      if (!enabled && reason) button.setAttribute('aria-describedby', `why-${action}`);
-      else button.removeAttribute('aria-describedby');
       if (!focusables().some((b) => b.tabIndex === 0)) setRoving(focusables()[0]);
     },
     announce(text) {

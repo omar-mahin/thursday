@@ -415,70 +415,19 @@ testWithHostAccess('no button is left permanently greyed out', async ({ openFixt
       .filter((button) => (button as HTMLButtonElement).disabled)
       .map((button) => button.getAttribute('aria-label'));
   });
-  /*
-   * Comment, and only Comment.
-   *
-   * A comment is stored against the audit it was written on, so until there is
-   * one there is nowhere to put it. Leaving the button pressable was worse than
-   * greying it: the card opened, you typed, and only then were you told it
-   * could not be kept.
-   *
-   * The list is not the whole check. The rule this test exists to enforce is
-   * that a disabled button is a promise something will keep -- so the promise
-   * is kept below rather than asserted in a comment.
-   */
-  expect(stuck).toEqual(['Comment']);
+  expect(stuck).toEqual([]);
 });
 
-testWithHostAccess('the one greyed-out button is enabled as soon as it can be', async ({
-  openFixture,
-  activate,
-  extensionId,
-  context,
-}) => {
-  const page = await openFixture('accessibility.html');
-  await activate(page);
-  const comment = toolbar(page).getByRole('button', { name: 'Comment' });
-  await expect(comment).toBeDisabled();
-
-  const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  await page.bringToFront();
-  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
-  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
-
-  // The promise, kept.
-  await expect(comment).toBeEnabled();
-});
-
-testWithHostAccess('a button that is off says why, and the tip stays on screen', async ({
-  openFixture,
-  activate,
-  extensionId,
-  context,
-}) => {
+test('a tooltip stays on screen with the toolbar at the edge', async ({ openFixture }) => {
   /*
-   * Two failures with one cause: a control that refuses without explaining.
-   *
-   * Comment is off until there is an audit, because a comment is stored against
-   * the audit it was written on. Greying it stopped somebody writing a
-   * paragraph they could not keep -- and then said nothing about what to do
-   * instead, which is the same dead end from the other side.
-   *
-   * The clamping is here rather than in its own test because the reason is what
-   * made the tips long enough to run off the window. The toolbar is draggable,
-   * so an edge is a normal place for it to be.
+   * Tips are centred on their button by CSS, which is right until the toolbar
+   * is dragged near an edge -- and the toolbar is draggable, so an edge is a
+   * normal place for it to be. Then half the tip is outside the window and
+   * simply not there. "Close Thursday" is wide enough for this on its own.
    */
-  const page = await openFixture('accessibility.html');
+  const page = await openFixture('hostile.html');
   await page.setViewportSize({ width: 900, height: 600 });
-  await activate(page);
-
-  const comment = toolbar(page).getByRole('button', { name: 'Comment' });
-  await expect(comment).toBeDisabled();
-  // The name is unchanged; the reason is a description and the visible tip.
-  await expect(comment.locator('.tb-tip')).toHaveText('Comment — run an audit first');
-  await expect(comment).toHaveAttribute('aria-describedby', 'why-comment');
-  await expect(comment.locator('.tb-why')).toHaveText('run an audit first');
+  await injectContentScript(page);
 
   // Dragged hard right, where a centred tip would hang off the window.
   const grip = toolbar(page).locator('.grip');
@@ -501,15 +450,4 @@ testWithHostAccess('a button that is off says why, and the tip stays on screen',
     .toBeLessThanOrEqual(900);
   const settled = (await close.locator('.tb-tip').boundingBox())!;
   expect(settled.x, 'the tooltip runs off the left of the window').toBeGreaterThanOrEqual(0);
-
-  // And once there is an audit the reason goes away with the greying.
-  const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  await page.bringToFront();
-  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
-  await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
-
-  await expect(comment).toBeEnabled();
-  await expect(comment).not.toHaveAttribute('aria-describedby', /./);
-  await expect(comment.locator('.tb-tip')).toHaveText('Comment');
 });
