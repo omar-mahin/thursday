@@ -27,7 +27,7 @@ const PIN_FRAME_BUDGET_MS = 16 * 4;
 
 async function panelFor(page: Page, extensionId: string): Promise<Page> {
   const panel = await page.context().newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await page.bringToFront();
   return panel;
 }

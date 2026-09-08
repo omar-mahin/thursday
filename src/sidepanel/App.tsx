@@ -1,7 +1,6 @@
 import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import { PRODUCT_VERSION } from '../../manifest.config';
 import { PRODUCT_NAME } from '../shared/constants/product';
-import { FLAGS } from '../shared/constants/flags';
 import { displayOrigin } from '../shared/utils/url';
 import { countBySeverity } from '../audit/engine/run';
 import { carryAnnotations, compareAudits, type AuditDiff } from '../audit/engine/compare';
@@ -27,7 +26,6 @@ import {
   pinsFor,
   reduce,
 } from './state/findings';
-import { PageCard } from './components/PageCard';
 import { AuditLauncher } from './components/AuditLauncher';
 import { FindingsList } from './components/FindingsList';
 import { FindingDetail } from './components/FindingDetail';
@@ -35,25 +33,21 @@ import { CompareCard } from './components/CompareCard';
 import { HistoryCard } from './components/HistoryCard';
 import { FilesCard } from './components/FilesCard';
 import { CommentsCard } from './components/CommentsCard';
-import { ElementInspector } from './components/ElementInspector';
-import { HoverReadout } from './components/HoverReadout';
-import { MessageLog } from './components/MessageLog';
-
-type Tab = 'audit' | 'element';
 
 const EMPTY_COUNTS: Record<Severity, number> = { critical: 0, high: 0, medium: 0, low: 0, info: 0 };
 
 type Baseline = { audit: Audit; findings: Finding[] };
 
 export function App(): React.ReactElement {
-  const { page, log, send } = usePageConnection();
+  const { page, send } = usePageConnection();
   const audit = useAudit(page.snapshot, send);
   const [findings, dispatch] = useReducer(reduce, EMPTY_STATE);
-  const [tab, setTab] = useState<Tab>('audit');
   const [active, setActive] = useState<ActiveAudit | null>(null);
   const [diff, setDiff] = useState<{ diff: AuditDiff; baselineAt: number } | null>(null);
   /** A file is being written. The picker gives no feedback of its own. */
   const [saving, setSaving] = useState(false);
+  /** Whether history, files and the comparison are showing. Closed by default. */
+  const [showMore, setShowMore] = useState(false);
   /** The comment whose pin is highlighted, if it is a comment rather than a finding. */
   const [openComment, setOpenComment] = useState<string | null>(null);
   /** The element the user last picked to comment on, until they use it. */
@@ -116,13 +110,6 @@ export function App(): React.ReactElement {
    */
   const shown = useRef<Baseline | null>(null);
 
-  // Follow the user to whatever they just asked to look at.
-  useEffect(() => {
-    if (page.selection) setTab('element');
-  }, [page.selection]);
-  useEffect(() => {
-    if (page.lastToolbarAction?.action === 'inspect') setTab('element');
-  }, [page.lastToolbarAction]);
   /*
    * Audit on the toolbar runs the audit, rather than only revealing the tab
    * that holds the button that runs it.
@@ -133,7 +120,6 @@ export function App(): React.ReactElement {
    */
   useEffect(() => {
     if (page.lastToolbarAction?.action !== 'audit') return;
-    setTab('audit');
     if (page.activated && !audit.running) audit.start();
   }, [page.lastToolbarAction]);
 
@@ -300,7 +286,6 @@ export function App(): React.ReactElement {
   // A pin click on the page opens that finding, or that comment, here.
   useEffect(() => {
     if (!page.pinClicked) return;
-    setTab('audit');
     if (page.pinClicked.kind === 'comment') {
       setOpenComment(page.pinClicked.targetId);
       return;
@@ -394,7 +379,6 @@ export function App(): React.ReactElement {
         });
         if (saved) {
           setCommentTarget(null);
-          setTab('audit');
         }
       } catch (error) {
         send({
@@ -407,11 +391,6 @@ export function App(): React.ReactElement {
       }
     })();
   }, [page.submitted]);
-
-  // Pressing Comment on the page toolbar has to bring the panel to the card.
-  useEffect(() => {
-    if (page.lastToolbarAction?.action === 'comment') setTab('audit');
-  }, [page.lastToolbarAction]);
 
   /** Opening a finding should show it: the detail card sits below a long list. */
   const openFinding = useCallback((id: string) => {
@@ -485,7 +464,6 @@ export function App(): React.ReactElement {
       setOpenComment(null);
       setCommentTarget(null);
       setActive(next);
-      setTab('audit');
     },
     [audit],
   );
@@ -623,58 +601,39 @@ export function App(): React.ReactElement {
 
   return (
     <div className="panel">
+      {/*
+        One line, not a card.
+ 
+        This was a product name, an origin, a connection badge, two tabs and a
+        PAGE card listing the URL, the viewport and the document size -- most of
+        a 380px-wide panel spent before the first finding. The frame around the
+        panel already says what this is, the ruler shows sizes on the page, and
+        the only thing here somebody acts on is stopping.
+      */}
       <header className="panel-head">
-        <div>
-          <h1 className="brandmark">{PRODUCT_NAME}</h1>
-          <div className="hint truncate" style={{ maxWidth: 200 }}>
-            {page.url ? displayOrigin(page.url) : 'No page connected'}
-          </div>
-        </div>
-        <span className="badge" data-tone={page.error ? 'error' : page.activated ? 'on' : 'off'}>
-          <span className="dot" />
-          {page.activated ? 'Connected' : 'Not running'}
+        {/*
+          A heading the document needs and the design does not.
+ 
+          The frame around this panel carries the visible title, so repeating it
+          here spent a line of a 380px window on something already on screen --
+          but removing it left the document with no h1 at all, which Thursday's
+          own A11Y-005 caught immediately. Hidden, not absent.
+        */}
+        <h1 className="sr">{PRODUCT_NAME}</h1>
+        <span className="head-origin mono truncate">
+          {page.url ? displayOrigin(page.url) : 'No page connected'}
         </span>
+        {page.activated ? (
+          <button type="button" className="link" onClick={() => send({ type: 'DEACTIVATE' })}>
+            Stop
+          </button>
+        ) : (
+          <span className="hint">Not running</span>
+        )}
       </header>
 
-      <div className="tabs" role="tablist" aria-label="Panel sections">
-        <button
-          type="button"
-          role="tab"
-          id="tab-audit"
-          aria-selected={tab === 'audit'}
-          aria-controls="panel-audit"
-          onClick={() => setTab('audit')}
-        >
-          Audit
-          {findings.views.length > 0 ? <span className="tab-count">{findings.views.length}</span> : null}
-        </button>
-        <button
-          type="button"
-          role="tab"
-          id="tab-element"
-          aria-selected={tab === 'element'}
-          aria-controls="panel-element"
-          onClick={() => setTab('element')}
-        >
-          Element
-          {page.selection ? <span className="tab-dot" aria-hidden="true" /> : null}
-        </button>
-      </div>
-
       <div className="panel-body">
-        {page.selecting ? (
-          <HoverReadout hovered={page.hovered} onCancel={() => send({ type: 'CANCEL_SELECTION' })} />
-        ) : null}
-
-        {tab === 'audit' ? (
-          <div id="panel-audit" role="tabpanel" aria-labelledby="tab-audit" className="stack">
-            <PageCard page={page} onStop={() => send({ type: 'DEACTIVATE' })} />
-            <SelectAction
-              activated={page.activated}
-              selecting={page.selecting}
-              onStart={() => send({ type: 'START_SELECTION' })}
-              onCancel={() => send({ type: 'CANCEL_SELECTION' })}
-            />
+          <div className="stack">
             <AuditLauncher activated={page.activated} running={audit.running} onStart={audit.start} />
 
             {shots.sweep ? (
@@ -696,15 +655,6 @@ export function App(): React.ReactElement {
             ) : null}
 
             {active && active.source !== 'live' ? <ReopenedBanner active={active} /> : null}
-
-            {diff ? (
-              <CompareCard
-                diff={diff.diff}
-                baselineAt={diff.baselineAt}
-                onOpenFinding={openFinding}
-                onDismiss={() => setDiff(null)}
-              />
-            ) : null}
 
             {active && findings.views.length === 0 ? (
               <div className="empty">
@@ -768,49 +718,74 @@ export function App(): React.ReactElement {
               onLocate={locateComment}
             />
 
-            <HistoryCard
-              library={library.state}
-              activeAuditId={active?.audit.id ?? null}
-              scoped={origin !== null}
-              onOpen={(id) => void library.open(id).then(adopt)}
-              onDelete={(id) => void library.remove(id)}
-            />
-
-            <FilesCard
-              canExport={active !== null}
-              reportCount={inReport.length}
-              totalCount={findings.views.length}
-              commentCount={comments.annotations.length}
-              busy={library.state.busy || saving}
-              saving={saving}
-              onSaveAudit={saveAuditFile}
-              onSaveReport={saveReportFile}
-              onSavePdf={savePdfReport}
-              onOpenText={(text) => void library.importText(text).then(adopt)}
-            />
-
             <LibraryMessages library={library} />
 
-            {FLAGS.messageLog ? <MessageLog entries={log} /> : null}
-          </div>
-        ) : (
-          <div id="panel-element" role="tabpanel" aria-labelledby="tab-element">
-            <ElementInspector
-              selection={page.selection}
-              resolution={page.resolution}
-              onLocate={() => {
-                if (page.selection) send({ type: 'FOCUS_ELEMENT', payload: { ref: page.selection.reference } });
-              }}
-              onSelectAnother={() => send({ type: 'START_SELECTION' })}
-            />
-          </div>
-        )}
-      </div>
+            {/*
+              Everything you need occasionally, folded away.
+ 
+              History, files and the comparison are the point of the tool but
+              not the thing you look at while working through a list, and in a
+              380px window they pushed the findings off the bottom. One
+              disclosure, closed by default, remembered for the session.
+            */}
+            {/*
+              A button and a region, not a native details/summary.
+ 
+              The native pair was here first and Thursday's own UX-004 flagged
+              it: the `details` element reads as keyboard-focusable and
+              clickable while carrying no button or link role and no pointer
+              cursor, which is exactly the confusion that rule is for. An
+              explicit button with aria-expanded says the same thing to a
+              screen reader and to the rule.
+            */}
+            <div className="more" data-open={showMore ? 'true' : 'false'}>
+              <button
+                type="button"
+                className="more-toggle"
+                aria-expanded={showMore}
+                aria-controls="panel-more"
+                onClick={() => setShowMore((open) => !open)}
+              >
+                History, files and comparison
+              </button>
+              <div id="panel-more" className="stack" hidden={!showMore}>
+                {diff ? (
+                  <CompareCard
+                    diff={diff.diff}
+                    baselineAt={diff.baselineAt}
+                    onOpenFinding={openFinding}
+                    onDismiss={() => setDiff(null)}
+                  />
+                ) : null}
 
-      <footer className="panel-foot">
-        <span>Local only. Nothing leaves this browser.</span>
-        <span className="mono">v{PRODUCT_VERSION}</span>
-      </footer>
+                <FilesCard
+                  canExport={active !== null}
+                  reportCount={inReport.length}
+                  totalCount={findings.views.length}
+                  commentCount={comments.annotations.length}
+                  busy={library.state.busy || saving}
+                  saving={saving}
+                  onSaveAudit={saveAuditFile}
+                  onSaveReport={saveReportFile}
+                  onSavePdf={savePdfReport}
+                  onOpenText={(text) => void library.importText(text).then(adopt)}
+                />
+
+                <HistoryCard
+                  library={library.state}
+                  activeAuditId={active?.audit.id ?? null}
+                  scoped={origin !== null}
+                  onOpen={(id) => void library.open(id).then(adopt)}
+                  onDelete={(id) => void library.remove(id)}
+                />
+
+                <p className="hint" style={{ margin: 0 }}>
+                  {PRODUCT_NAME} v{PRODUCT_VERSION} — local only, nothing leaves this browser.
+                </p>
+              </div>
+            </div>
+          </div>
+      </div>
     </div>
   );
 }
@@ -898,30 +873,3 @@ export function framesNote(audit: Audit): string {
   } is not covered.`;
 }
 
-function SelectAction({
-  activated,
-  selecting,
-  onStart,
-  onCancel,
-}: {
-  activated: boolean;
-  selecting: boolean;
-  onStart: () => void;
-  onCancel: () => void;
-}): React.ReactElement {
-  return (
-    <section className="card">
-      <div className="section-title">Inspect</div>
-      <button
-        type="button"
-        className={selecting ? undefined : 'primary'}
-        style={{ width: '100%' }}
-        disabled={!activated}
-        onClick={selecting ? onCancel : onStart}
-        aria-pressed={selecting}
-      >
-        {selecting ? 'Cancel selection' : 'Select an element'}
-      </button>
-    </section>
-  );
-}

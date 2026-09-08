@@ -1,5 +1,5 @@
-import { expect, testWithHostAccess as test } from './fixtures';
-import type { BrowserContext, Page } from '@playwright/test';
+import { expect, openMore, panelOf, panelReady, testWithHostAccess as test } from './fixtures';
+import type { FrameLocator, Page } from '@playwright/test';
 
 /**
  * Re-auditing a page and seeing what moved.
@@ -8,29 +8,37 @@ import type { BrowserContext, Page } from '@playwright/test';
  * is that the panel actually feeds it the right two sets -- the audit the user
  * was looking at, with their triage applied, against the fresh one.
  */
-const openPanel = async (context: BrowserContext, extensionId: string): Promise<Page> => {
-  const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  return panel;
+/**
+ * The panel as it ships: floating on the page being audited.
+ *
+ * Not a second panel document -- with the panel mounted on every activated
+ * page, a second one is a second panel, and pressing Audit made both of them
+ * run an audit.
+ */
+const openPanel = async (page: Page): Promise<FrameLocator> => {
+  await panelReady(page);
+  return panelOf(page);
 };
 
 test('re-auditing an unchanged page reports nothing fixed and nothing new', async ({
   openFixture,
   activate,
-  extensionId,
-  context,
 }) => {
   const page = await openFixture('accessibility.html');
   await activate(page);
-  const panel = await openPanel(context, extensionId);
+  const panel = await openPanel(page);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
   const before = await panel.locator('.finding-row').count();
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toBeVisible();
 
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toContainText('Nothing changed.');
   await expect(panel.locator('.diff-totals li[data-kind="fixed"]')).toHaveText('0 fixed');
   await expect(panel.locator('.diff-totals li[data-kind="new"]')).toHaveText('0 new');
@@ -40,12 +48,10 @@ test('re-auditing an unchanged page reports nothing fixed and nothing new', asyn
 test('fixing the page in place is reported as fixed', async ({
   openFixture,
   activate,
-  extensionId,
-  context,
 }) => {
   const page = await openFixture('accessibility.html');
   await activate(page);
-  const panel = await openPanel(context, extensionId);
+  const panel = await openPanel(page);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
@@ -63,10 +69,14 @@ test('fixing the page in place is reported as fixed', async ({
   expect(fixed).toBeGreaterThan(0);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toBeVisible();
 
   const fixedCount = await panel.locator('.diff-totals li[data-kind="fixed"]').innerText();
   expect(Number.parseInt(fixedCount, 10)).toBeGreaterThanOrEqual(fixed);
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toContainText('the page improved');
 
   // A fixed finding is listed but not clickable: it no longer exists, so there
@@ -78,12 +88,10 @@ test('fixing the page in place is reported as fixed', async ({
 test('breaking the page in place is reported as new', async ({
   openFixture,
   activate,
-  extensionId,
-  context,
 }) => {
   const page = await openFixture('control.html');
   await activate(page);
-  const panel = await openPanel(context, extensionId);
+  const panel = await openPanel(page);
 
   // The control page is clean, so the first audit is the clean baseline.
   await panel.getByRole('button', { name: 'Full audit' }).click();
@@ -99,8 +107,12 @@ test('breaking the page in place is reported as new', async ({
   });
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toBeVisible();
   await expect(panel.locator('.diff-totals li[data-kind="new"]')).not.toHaveText('0 new');
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toContainText('more to look at than last time');
 
   // A new finding can be opened straight from the comparison.
@@ -111,12 +123,10 @@ test('breaking the page in place is reported as new', async ({
 test('a dismissed finding stays dismissed through a re-audit', async ({
   openFixture,
   activate,
-  extensionId,
-  context,
 }) => {
   const page = await openFixture('accessibility.html');
   await activate(page);
-  const panel = await openPanel(context, extensionId);
+  const panel = await openPanel(page);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.detail').first()).toBeVisible();
@@ -126,6 +136,8 @@ test('a dismissed finding stays dismissed through a re-audit', async ({
   await expect(panel.locator('.finding-row', { hasText: title })).toHaveCount(0);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toBeVisible();
 
   // Re-running the audit must not resurrect what the user already triaged: the
@@ -150,19 +162,21 @@ test('a dismissed finding stays dismissed through a re-audit', async ({
 test('the comparison can be dismissed without losing the audit', async ({
   openFixture,
   activate,
-  extensionId,
-  context,
 }) => {
   const page = await openFixture('accessibility.html');
   await activate(page);
-  const panel = await openPanel(context, extensionId);
+  const panel = await openPanel(page);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
   await panel.getByRole('button', { name: 'Full audit' }).click();
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toBeVisible();
 
   await panel.locator('.compare').getByRole('button', { name: 'Hide the comparison' }).click();
+  // The comparison lives behind the panel's disclosure now.
+  await openMore(page);
   await expect(panel.locator('.compare')).toHaveCount(0);
   await expect(panel.locator('.finding-row').first()).toBeVisible();
 });

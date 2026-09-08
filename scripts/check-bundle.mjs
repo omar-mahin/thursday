@@ -18,7 +18,7 @@ const DIST = 'dist';
 /** Files the extension is allowed to ship, as exact names or patterns. */
 const ALLOWED = [
   /^manifest\.json$/,
-  /^(popup|sidepanel|options)\.html$/,
+  /^(popup|panel|options)\.html$/,
   /^content\.js$/,
   /^service-worker\.js$/,
   /^icons\/icon(16|32|48|128)\.png$/,
@@ -59,7 +59,7 @@ const BUDGETS = [
    */
   { pattern: /^service-worker\.js$/, kb: 20, note: 'a router, plus storing a comment when no panel is open' },
   { pattern: /^assets\/vendor\.js$/, kb: 240, note: 'React and React DOM' },
-  { pattern: /^assets\/sidepanel\.js$/, kb: 200, note: 'the panel, the rules, both report writers and the PDF font metrics' },
+  { pattern: /^assets\/panel\.js$/, kb: 200, note: 'the panel, the rules, both report writers and the PDF font metrics' },
 ];
 
 const TOTAL_BUDGET_KB = 700;

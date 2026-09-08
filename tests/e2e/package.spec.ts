@@ -2,7 +2,7 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, readdirSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, resolve } from 'node:path';
-import { chromium, expect, test } from './fixtures';
+import { chromium, expect, extensionPage, test } from './fixtures';
 
 /**
  * The artifact users install.
@@ -124,7 +124,7 @@ test('the extracted zip loads and runs in Chrome', async () => {
 
     // The three surfaces a user can open, from the extracted artifact.
     const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panel.goto(`chrome-extension://${extensionId}/panel.html`);
     await expect(panel.locator('.panel-head')).toBeVisible();
 
     const popup = await context.newPage();
@@ -136,9 +136,9 @@ test('the extracted zip loads and runs in Chrome', async () => {
     await expect(options.getByRole('heading', { name: /settings/i })).toBeVisible();
 
     // And the permission set survived packaging unchanged.
-    const permissions = await panel.evaluate(() => chrome.runtime.getManifest().permissions);
-    expect(permissions).toEqual(['storage', 'activeTab', 'scripting', 'sidePanel']);
-    const shipped = await panel.evaluate(() => chrome.runtime.getManifest() as Record<string, unknown>);
+    const permissions = await (await extensionPage(context, extensionId)).evaluate(() => chrome.runtime.getManifest().permissions);
+    expect(permissions).toEqual(['storage', 'activeTab', 'scripting']);
+    const shipped = await (await extensionPage(context, extensionId)).evaluate(() => chrome.runtime.getManifest() as Record<string, unknown>);
     expect(shipped['host_permissions']).toBeUndefined();
     expect(shipped['content_scripts']).toBeUndefined();
   } finally {

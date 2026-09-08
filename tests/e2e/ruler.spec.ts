@@ -148,7 +148,7 @@ testWithHostAccess(
     await activate(page);
 
     const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panel.goto(`chrome-extension://${extensionId}/panel.html`);
     await page.bringToFront();
     await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
     await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
@@ -210,7 +210,7 @@ testWithHostAccess(
     await activate(page);
 
     const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panel.goto(`chrome-extension://${extensionId}/panel.html`);
     await page.bringToFront();
     await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
     await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });
@@ -325,7 +325,7 @@ testWithHostAccess('Comment mode picks an element without measuring it', async (
   await page.setViewportSize({ width: 1000, height: 700 });
   await activate(page);
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await page.bringToFront();
   await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
   await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 30_000 });

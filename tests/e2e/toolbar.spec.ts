@@ -1,4 +1,13 @@
-import { expect, injectContentScript, test, testWithHostAccess, toolbar } from './fixtures';
+import {
+  expect,
+  injectContentScript,
+  openMore,
+  panelOf,
+  panelReady,
+  test,
+  testWithHostAccess,
+  toolbar,
+} from './fixtures';
 
 test('the toolbar mounts in a shadow root and survives hostile page CSS', async ({ openFixture }) => {
   const page = await openFixture('hostile.html');
@@ -115,7 +124,7 @@ test('the toolbar does not leak its events into the page', async ({ openFixture 
   });
 
   await toolbar(page).locator('.grip').click();
-  await toolbar(page).getByRole('button', { name: 'Inspect' }).click();
+  await toolbar(page).getByRole('button', { name: 'Select' }).click();
   await toolbar(page).locator('button[tabindex="0"]').focus();
   await page.keyboard.press('ArrowRight');
 
@@ -151,7 +160,6 @@ test('every action is an icon with a name and a hittable target', async ({ openF
     'Audit',
     'Select',
     'Comment',
-    'Inspect',
     'Close Thursday',
   ]);
 
@@ -222,9 +230,9 @@ test('the label appears on hover and on keyboard focus', async ({ openFixture })
   const page = await openFixture('hostile.html');
   await injectContentScript(page);
 
-  const button = toolbar(page).locator('[data-action="inspect"]');
+  const button = toolbar(page).locator('[data-action="select"]');
   const tip = button.locator('.tb-tip');
-  await expect(tip).toHaveText('Inspect');
+  await expect(tip).toHaveText('Select');
 
   const opacity = () => tip.evaluate((node) => getComputedStyle(node).opacity);
   expect(Number(await opacity())).toBe(0);
@@ -337,7 +345,7 @@ testWithHostAccess(
     expect(failure).toBeNull();
 
     await expect(toolbar(page)).toBeVisible();
-    await expect(toolbar(page).locator('svg.tb-icon')).toHaveCount(5);
+    await expect(toolbar(page).locator('svg.tb-icon')).toHaveCount(4);
     await expect(toolbar(page).locator('.brand-credit')).toHaveText('By Omar');
   },
 );
@@ -357,24 +365,19 @@ testWithHostAccess(
 testWithHostAccess('Audit runs an audit rather than only revealing the tab that does', async ({
   openFixture,
   activate,
-  extensionId,
-  context,
 }) => {
   const page = await openFixture('accessibility.html');
   await activate(page);
 
-  const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  // The panel opens on the audit tab, which is what made "reveal the tab" a
-  // button that did nothing at all in the ordinary case.
-  await expect(panel.getByRole('button', { name: 'Full audit' })).toBeVisible();
+  await panelReady(page);
+  const panel = panelOf(page);
   await expect(panel.locator('.finding-row')).toHaveCount(0);
 
-  await page.bringToFront();
   await toolbar(page).getByRole('button', { name: 'Audit' }).click();
 
   await expect(panel.locator('.finding-row').first()).toBeVisible({ timeout: 15_000 });
 
+  await openMore(page);
   await expect(panel.locator('.history-row')).toHaveCount(1);
   await expect(panel.locator('.card.compare')).toHaveCount(0);
 
@@ -388,9 +391,9 @@ testWithHostAccess('Audit runs an audit rather than only revealing the tab that 
    * history entry, and a diff against the first -- rather than on the findings,
    * which are identical either way and so cannot tell a re-run from a no-op.
    */
-  await page.bringToFront();
   await toolbar(page).getByRole('button', { name: 'Audit' }).click();
 
+  await openMore(page);
   await expect(panel.locator('.history-row')).toHaveCount(2, { timeout: 15_000 });
   await expect(panel.locator('.card.compare')).toBeVisible();
 });

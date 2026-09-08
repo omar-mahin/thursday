@@ -1,5 +1,5 @@
 import { readFileSync } from 'node:fs';
-import { expect, testWithCapture as test } from './fixtures';
+import { expect, openMore, panelOf, panelReady, testWithCapture as test, withoutPicker } from './fixtures';
 import type { BrowserContext, Page } from '@playwright/test';
 
 /**
@@ -35,7 +35,7 @@ async function setCaptures(context: BrowserContext, extensionId: string, on: boo
 
 const openPanel = async (context: BrowserContext, extensionId: string): Promise<Page> => {
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   return panel;
 };
 
@@ -320,27 +320,25 @@ test('a sensitive field is painted out of a picture taken for something else', a
 test('the PDF carries a picture for each finding it has one for', async ({
   openFixture,
   activate,
-  extensionId,
   context,
 }) => {
+  // The picker goes before the panel frame exists; see withoutPicker.
+  await withoutPicker(context);
   const page = await openFixture('accessibility.html');
   await activate(page);
-  const panel = await openPanel(context, extensionId);
-  await panel.addInitScript(() => {
-    Reflect.deleteProperty(window, 'showSaveFilePicker');
-  });
-  await panel.reload();
-
-  await page.bringToFront();
-  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+  await panelReady(page);
+  const panel = panelOf(page);
+  await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.shot-figure img')).toBeVisible({ timeout: 30_000 });
   await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
     timeout: 60_000,
   });
 
+  // Saving lives behind the panel's disclosure now.
+  await openMore(page);
   const download = await Promise.all([
-    panel.waitForEvent('download'),
-    panel.getByRole('button', { name: 'Save PDF' }).dispatchEvent('click'),
+    page.waitForEvent('download'),
+    panel.getByRole('button', { name: 'Save PDF' }).click(),
   ]).then(([event]) => event);
   const bytes = readFileSync(await download.path());
   const text = bytes.toString('latin1');
@@ -355,27 +353,24 @@ test('the PDF carries a picture for each finding it has one for', async ({
 test('a saved audit file carries every crop inline', async ({
   openFixture,
   activate,
-  extensionId,
   context,
 }) => {
+  // The picker goes before the panel frame exists; see withoutPicker.
+  await withoutPicker(context);
   const page = await openFixture('accessibility.html');
   await activate(page);
-  const panel = await openPanel(context, extensionId);
-  await panel.addInitScript(() => {
-    Reflect.deleteProperty(window, 'showSaveFilePicker');
-  });
-  await panel.reload();
-
-  await page.bringToFront();
-  await panel.getByRole('button', { name: 'Full audit' }).dispatchEvent('click');
+  await panelReady(page);
+  const panel = panelOf(page);
+  await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.shot-figure img')).toBeVisible({ timeout: 30_000 });
   await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
     timeout: 60_000,
   });
 
+  await openMore(page);
   const download = await Promise.all([
-    panel.waitForEvent('download'),
-    panel.getByRole('button', { name: 'Save audit' }).dispatchEvent('click'),
+    page.waitForEvent('download'),
+    panel.getByRole('button', { name: 'Save audit' }).click(),
   ]).then(([event]) => event);
 
   const parsed = JSON.parse(readFileSync(await download.path(), 'utf8')) as {

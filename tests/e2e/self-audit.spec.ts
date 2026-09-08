@@ -1,13 +1,13 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import type { Page } from '@playwright/test';
+import type { Frame, Page } from '@playwright/test';
 import { contrastRatio, contrastTarget, parseColor } from '../../src/audit/measure/color';
 import { runAudit } from '../../src/audit/engine/run';
 import { ALL_CATEGORIES } from '../../src/audit/engine/registry';
 import { DEFAULT_AUDIT_SETTINGS } from '../../src/audit/types';
 import { renderReport } from '../../src/report/render';
 import type { Finding, PageSnapshot, Severity } from '../../src/shared/types';
-import { expect, exchange, FIXTURE_ORIGIN, testWithHostAccess as test } from './fixtures';
+import { FIXTURE_ORIGIN, exchange, expect, openMore, panelDoc, panelOf, panelReady, testWithHostAccess as test } from './fixtures';
 
 /**
  * Thursday, audited by Thursday.
@@ -95,7 +95,7 @@ async function auditMirrored(
   await activate(mirror);
 
   const driver = await context.newPage();
-  await driver.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await driver.goto(`chrome-extension://${extensionId}/panel.html`);
   await mirror.bringToFront();
 
   const snapshot = (
@@ -151,7 +151,7 @@ test('the side panel passes its own thirty rules', async ({
   // likely to have a defect, would be the only part not covered.
   const panel = await context.newPage();
   await panel.setViewportSize({ width: 400, height: 900 });
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
   await panel.locator('.finding-row').first().click();
@@ -243,7 +243,7 @@ test('the exported report passes the rules it reports on', async ({
   const seed = await openFixture('accessibility.html');
   await activate(seed);
   const driver = await context.newPage();
-  await driver.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await driver.goto(`chrome-extension://${extensionId}/panel.html`);
   await driver.getByRole('button', { name: 'Full audit' }).click();
   await expect(driver.locator('.finding-row').first()).toBeVisible();
 
@@ -335,7 +335,7 @@ type Sample = {
   fontWeight: number;
 };
 
-async function sample(panel: Page, selectors: string[]): Promise<Sample[]> {
+async function sample(panel: Frame | Page, selectors: string[]): Promise<Sample[]> {
   return panel.evaluate((wanted) => {
     /** The nearest ancestor that actually paints, which is what text sits on. */
     const resolveBackground = (start: Element): string => {
@@ -382,8 +382,6 @@ function assertReadable(samples: Sample[]): void {
 test('every coloured label in the panel clears the contrast rule', async ({
   openFixture,
   activate,
-  extensionId,
-  context,
 }) => {
   // Severity is the panel's most meaningful text and was its least readable:
   // the first version measured 3.33:1 at 11px. These selectors exist so a
@@ -391,22 +389,25 @@ test('every coloured label in the panel clears the contrast rule', async ({
   // whole-page audit that says only that something is wrong somewhere.
   const page = await openFixture('accessibility.html');
   await activate(page);
-  const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panelReady(page);
+  const panel = panelOf(page);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
   await panel.getByRole('button', { name: 'Full audit' }).click();
+  // The comparison and history live behind the disclosure now, and both have
+  // coloured labels of their own -- so it has to be open to measure them.
+  await openMore(page);
   await expect(panel.locator('.compare')).toBeVisible();
   await expect(panel.locator('.history-row').first()).toBeVisible();
 
-  const samples = await sample(panel, SELECTORS);
+  const samples = await sample(panelDoc(page), SELECTORS);
   expect(samples.length).toBeGreaterThanOrEqual(10);
   assertReadable(samples);
 
   await panel.getByLabel('Open a saved audit file').setInputFiles(resolve('tests/fixtures/sample.thursday.json'));
   await expect(panel.locator('.notice')).toContainText('Opened from a file');
-  assertReadable(await sample(panel, ['.notice', '.history-when', '.dropzone']));
+  assertReadable(await sample(panelDoc(page), ['.notice', '.history-when', '.dropzone']));
 });
 
 test('the panel says what state it is in without relying on colour alone', async ({
@@ -418,7 +419,7 @@ test('the panel says what state it is in without relying on colour alone', async
   const page = await openFixture('accessibility.html');
   await activate(page);
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();

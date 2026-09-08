@@ -1,10 +1,138 @@
-import { test as base, chromium, type BrowserContext, type Page, type Worker } from '@playwright/test';
+import {
+  test as base,
+  chromium,
+  type BrowserContext,
+  type Frame,
+  type Locator,
+  type Page,
+  type Worker,
+} from '@playwright/test';
 import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
 
 /** A fake https origin, served from memory so no test ever touches the network. */
 export const FIXTURE_ORIGIN = 'https://fixture.thursday.test';
+
+/**
+ * The panel, as it actually ships: a frame the content script mounts on the page.
+ *
+ * Tests used to open `panel.html` in a tab of its own, which worked while the
+ * panel was a side panel and is now actively misleading -- a second panel
+ * document is a second panel, and it does its own auditing. Two of them made
+ * two audits from one button press.
+ *
+ * A FrameLocator, not a Page, so the things a Page can do and a frame cannot
+ * belong to the page around it: downloads fire on the page, `addInitScript`
+ * applies to the page and its frames, and anything needing an extension-origin
+ * `evaluate` should open the options page instead.
+ */
+export const panelOf = (page: Page) => page.frameLocator('thursday-root iframe.pf-frame');
+
+/**
+ * Waits for the framed panel to be mounted and connected.
+ *
+ * The frame is created after settings are read and the panel inside it has to
+ * boot React and open a port, so "activate returned" is not "the panel is
+ * ready". Every test that drives the panel starts here.
+ */
+export async function panelReady(page: Page): Promise<void> {
+  await page.locator('thursday-root .pf-root').waitFor({ state: 'visible', timeout: 15_000 });
+  await panelOf(page).getByRole('button', { name: 'Full audit' }).waitFor({ timeout: 15_000 });
+}
+
+/**
+ * The panel's document, for the few things a locator cannot do.
+ *
+ * `panelOf` returns a FrameLocator, which is right for finding and clicking
+ * but cannot `evaluate` -- and a couple of tests have to run script inside the
+ * panel itself, to read `document.activeElement` or a computed style. A Frame
+ * can, so this hands back the frame.
+ */
+export function panelDoc(page: Page): Frame {
+  const frame = page.frames().find((candidate) => candidate.url().includes('panel.html'));
+  if (!frame) throw new Error('the panel frame is not attached to this page');
+  return frame;
+}
+
+/**
+ * Takes the save-file picker away, before anything that might use it exists.
+ *
+ * The native dialog cannot be driven, so the panel's anchor fallback is what
+ * the tests exercise -- it writes the same bytes (see files.spec.ts). It has to
+ * be installed on the *page* rather than on the panel, because the panel is a
+ * frame of that page now, and it has to be installed before the frame is
+ * created: an init script only reaches frames attached after it is added.
+ */
+export async function withoutPicker(context: BrowserContext): Promise<void> {
+  /*
+   * On the context, not the page, and that distinction cost an hour.
+   *
+   * The panel is a cross-origin frame now, and `page.addInitScript` does not
+   * reach it -- so the panel kept the real picker, opened a native dialog that
+   * no test can drive, and every download assertion timed out waiting for an
+   * event that was never coming. A context-level script reaches every page and
+   * every frame in it.
+   *
+   * Must still be called before the frame loads, which means before activating.
+   */
+  await context.addInitScript(() => {
+    Reflect.deleteProperty(window, 'showSaveFilePicker');
+  });
+}
+
+/**
+ * A page on the extension's own origin, for reading storage.
+ *
+ * The panel used to be a document in a tab, so a test could `evaluate` in it
+ * and open IndexedDB. It is a frame now, and a FrameLocator cannot evaluate --
+ * so anything that needs to look at the database from the extension's origin
+ * opens the options page instead. It touches nothing the tests assert on.
+ */
+export async function extensionPage(context: BrowserContext, extensionId: string): Promise<Page> {
+  const page = await context.newPage();
+  await page.goto(`chrome-extension://${extensionId}/options.html`);
+  return page;
+}
+
+/**
+ * Opens the panel's History / files / comparison disclosure.
+ *
+ * Those moved behind one closed-by-default control: in a 380px floating window
+ * they pushed the findings off the bottom, and they are not what you look at
+ * while working through a list. Anything asserting on them has to open it.
+ */
+export async function openMore(page: Page): Promise<void> {
+  await openDisclosure(panelOf(page).locator('.more-toggle'), panelOf(page).locator(".more[data-open='true']"));
+}
+
+/** The same, for a panel opened as its own document rather than as a frame. */
+export async function openMoreIn(panel: Page): Promise<void> {
+  await openDisclosure(panel.locator('.more-toggle'), panel.locator(".more[data-open='true']"));
+}
+
+/**
+ * Opens a `details` and checks that it opened.
+ *
+ * Verified rather than fired-and-forgotten: under load the click can land
+ * while the panel is still re-rendering around an audit, and a disclosure that
+ * silently stayed shut fails later as "the history row is hidden", which points
+ * at the wrong thing entirely. Cost an hour of looking at the wrong code.
+ */
+async function openDisclosure(summary: Locator, opened: Locator): Promise<void> {
+  await summary.waitFor({ timeout: 10_000 });
+  for (let attempt = 0; attempt < 3; attempt += 1) {
+    if ((await opened.count()) > 0) return;
+    await summary.click();
+    try {
+      await opened.first().waitFor({ timeout: 2000 });
+      return;
+    } catch {
+      /* try again: the panel was mid-render */
+    }
+  }
+  throw new Error('the panel disclosure would not open');
+}
 
 export type Fixtures = {
   context: BrowserContext;

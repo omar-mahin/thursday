@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { expect, test, testWithHostAccess, FIXTURE_ORIGIN } from './fixtures';
-import type { BrowserContext, Page } from '@playwright/test';
+import { FIXTURE_ORIGIN, expect, extensionPage, openMore, panelOf, panelReady, test, testWithHostAccess, withoutPicker } from './fixtures';
+import type { FrameLocator, Page } from '@playwright/test';
 
 /**
  * Comments the user writes on a page, with images attached to them.
@@ -20,20 +20,19 @@ import type { BrowserContext, Page } from '@playwright/test';
 
 const IMAGE = resolve('tests/fixtures/annotation-image.png');
 
-async function withoutPicker(panel: Page): Promise<void> {
-  await panel.addInitScript(() => {
-    Reflect.deleteProperty(window, 'showSaveFilePicker');
-  });
-}
-
-const openPanel = async (context: BrowserContext, extensionId: string): Promise<Page> => {
-  const panel = await context.newPage();
-  await withoutPicker(panel);
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  return panel;
+/**
+ * The panel as it ships: floating on the page being audited.
+ *
+ * The picker is removed first, before the frame exists -- an init script only
+ * reaches frames attached after it is added, and the panel frame is attached by
+ * the content script during activation.
+ */
+const openPanel = async (page: Page): Promise<FrameLocator> => {
+  await panelReady(page);
+  return panelOf(page);
 };
 
-const card = (panel: Page) =>
+const card = (panel: Page | FrameLocator) =>
   panel.locator('.card', { has: panel.locator('.section-title', { hasText: 'Comments' }) });
 
 /**
@@ -59,7 +58,7 @@ const CARD = 'thursday-root .cm-card';
  * overlay off it for a moment. Anything that then clicks on the page has to
  * let that finish, or it is clicking at coordinates that have moved.
  */
-const settle = (panel: Page): Promise<void> =>
+const settle = (panel: FrameLocator): Promise<void> =>
   expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
     timeout: 60_000,
   });
@@ -78,7 +77,7 @@ const settle = (panel: Page): Promise<void> =>
  */
 async function writeOnPage(
   page: Page,
-  panel: Page,
+  panel: FrameLocator,
   options: { text: string; anchor?: string; files?: Parameters<Page['setInputFiles']>[1]; priority?: string },
 ): Promise<void> {
   await panel
@@ -99,21 +98,26 @@ async function writeOnPage(
   }
   await page.locator('thursday-root .cm-add').click();
   await expect(card).toBeHidden({ timeout: 15_000 });
-  await panel.bringToFront();
 }
 
 test('there is nowhere to write a comment until there is a page to write it on', async ({
-  extensionId,
   context,
+  extensionId,
 }) => {
-  const panel = await openPanel(context, extensionId);
+  // The panel with no page under it, which only its own document can be.
+  const panel = await context.newPage();
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await expect(card(panel)).toContainText('Activate Thursday on a page');
   await expect(panel.getByRole('button', { name: 'Comment on an element' })).toHaveCount(0);
 });
 
 testWithHostAccess(
   'a note written before any audit is kept, and the audit adopts it',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
     /*
      * Comments used to require an audit, because a comment is stored against
      * the audit it was written on. That is an implementation detail, and as a
@@ -125,11 +129,13 @@ testWithHostAccess(
      * that origin adopts them through the same mechanism a re-audit already
      * uses to carry comments forward.
      */
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
 
     // No audit anywhere yet.
+    await openMore(page);
     await expect(panel.locator('.history-row')).toHaveCount(0);
     await expect(panel.getByRole('button', { name: 'Full audit' })).toBeEnabled();
 
@@ -151,8 +157,10 @@ testWithHostAccess(
 
     // Including in the file, which is where it has to end up to be any use --
     // and the note's own bucket id must not travel in one.
+    // Save lives behind the panel's disclosure now.
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const text = readFileSync(await download.path(), 'utf8');
@@ -167,11 +175,16 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a comment can be anchored to an element by clicking it on the page',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -192,7 +205,6 @@ testWithHostAccess(
     await page.locator('thursday-root .cm-add').click();
     await expect(page.locator(CARD)).toBeHidden({ timeout: 15_000 });
 
-    await panel.bringToFront();
     await expect(panel.locator('.comment-row')).toHaveCount(1);
     await expect(panel.locator('.comment-body')).toHaveText(
       'This headline says nothing about the product.',
@@ -219,10 +231,15 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a comment about the page as a whole needs no element and gets no pin',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -242,10 +259,15 @@ testWithHostAccess(
 
 testWithHostAccess(
   'an image can be attached to a comment and is scaled before it is stored',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -261,7 +283,6 @@ testWithHostAccess(
 
     await page.locator('thursday-root .cm-add').click();
     await expect(page.locator(CARD)).toBeHidden({ timeout: 15_000 });
-    await panel.bringToFront();
 
     const image = panel.locator('.attach-grid img');
     await expect(image).toHaveCount(1);
@@ -277,10 +298,15 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a file that is not an image is refused by name, and the comment still saves',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -309,20 +335,33 @@ testWithHostAccess(
 
 testWithHostAccess(
   'comments and their images survive the panel being closed',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
     await writeOnPage(page, panel, { text: 'Written before the panel closed.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
-    await panel.close();
 
-    // A brand new panel, reopening the audit from history.
-    const fresh = await openPanel(context, extensionId);
+    /*
+     * A brand new page, and so a brand new panel: the panel floats on the page,
+     * so this is what closing it amounts to. The comment has to come back out
+     * of storage rather than out of the memory of the thing that wrote it.
+     */
+    await page.close();
+    await withoutPicker(context);
+    const later = await openFixture('cro.html');
+    await activate(later);
+    const fresh = await openPanel(later);
+    await openMore(later);
     await fresh.locator('.history-open').first().click();
     await expect(fresh.locator('.comment-body')).toHaveText('Written before the panel closed.');
     const image = fresh.locator('.attach-grid img');
@@ -333,23 +372,26 @@ testWithHostAccess(
 
 testWithHostAccess(
   'deleting an audit takes its comments and their images with it',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
     await writeOnPage(page, panel, { text: 'About to be deleted.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
+    await openMore(page);
     await panel.locator('.history-row button.icon').first().click();
     await panel.locator('.history-row button.danger').click();
+    await openMore(page);
     await expect(panel.locator('.history-row')).toHaveCount(0);
 
     // Orphans would be space the user can neither see nor reclaim.
-    const left = await panel.evaluate(
+    const left = await (await extensionPage(context, extensionId)).evaluate(
       () =>
         new Promise<{ annotations: number; attachments: number }>((done, fail) => {
           const request = indexedDB.open('thursday');
@@ -371,10 +413,15 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a comment can be edited and deleted',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -397,10 +444,15 @@ testWithHostAccess(
 
 testWithHostAccess(
   'clicking a comment pin on the page opens that comment in the panel',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -420,19 +472,26 @@ testWithHostAccess(
 
 testWithHostAccess(
   'comments travel in a saved audit file and reopen in a panel that never saw the page',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
     await writeOnPage(page, panel, { text: 'Carried in the file.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
+    // Save lives behind the panel's disclosure now.
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const text = readFileSync(await download.path(), 'utf8');
@@ -446,7 +505,7 @@ testWithHostAccess(
     const attachmentId = parsed.annotations?.[0]?.attachments[0]?.id ?? '';
     expect(parsed.attachments?.[attachmentId]).toMatch(/^data:image\/png;base64,/);
 
-    const fresh = await openPanel(context, extensionId);
+    const fresh = await openPanel(page);
     await fresh.getByLabel('Open a saved audit file').setInputFiles({
       name: 'reopened.thursday.json',
       mimeType: 'application/json',
@@ -462,19 +521,22 @@ testWithHostAccess(
 
 testWithHostAccess(
   'the HTML report carries comments in their own section and loads nothing',
-  async ({ openFixture, activate, extensionId, context, requests }) => {
+  async ({ openFixture, activate, context, requests }) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
     await writeOnPage(page, panel, { text: 'Reported opinion, not a measurement.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
+    // Save lives behind the panel's disclosure now.
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save report' }).click(),
     ]).then(([event]) => event);
     const html = readFileSync(await download.path(), 'utf8');
@@ -509,11 +571,16 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a comment reopened after a reload is pinned by searching the page, and says so',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -523,12 +590,13 @@ testWithHostAccess(
     });
     await expect(panel.locator('.comment-row')).toHaveCount(1);
 
+    // Save lives behind the panel's disclosure now.
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const text = readFileSync(await download.path(), 'utf8');
-    await panel.close();
 
     /*
      * The page has to be reloaded, not just the panel reopened.
@@ -542,7 +610,7 @@ testWithHostAccess(
     await page.reload();
     await activate(page);
 
-    const fresh = await openPanel(context, extensionId);
+    const fresh = await openPanel(page);
     await fresh.getByLabel('Open a saved audit file').setInputFiles({
       name: 'reopened.thursday.json',
       mimeType: 'application/json',
@@ -564,11 +632,12 @@ testWithHostAccess(
 
 testWithHostAccess(
   'comments survive a re-audit of the same page',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -576,12 +645,12 @@ testWithHostAccess(
     await panel.getByRole('button', { name: 'Comment on an element' }).click();
     await page.bringToFront();
     await pickOnPage(page, 'h1');
-    await panel.bringToFront();
     await writeOnPage(page, panel, { text: 'Still here after the second run.', files: IMAGE });
     await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
     // Run it again, the way somebody does after fixing something.
     await panel.getByRole('button', { name: 'Full audit' }).click();
+    await openMore(page);
     await expect(panel.locator('.compare')).toBeVisible();
 
     /*
@@ -595,7 +664,7 @@ testWithHostAccess(
     expect(await image.evaluate((node: HTMLImageElement) => node.naturalWidth)).toBe(48);
 
     // Still exactly one copy on disk, not one per run.
-    const counts = await panel.evaluate(
+    const counts = await (await extensionPage(context, extensionId)).evaluate(
       () =>
         new Promise<{ annotations: number; attachments: number }>((done, fail) => {
           const request = indexedDB.open('thursday');
@@ -614,8 +683,10 @@ testWithHostAccess(
     expect(counts).toEqual({ annotations: 1, attachments: 1 });
 
     // And it is still in the file the second audit exports.
+    // Save lives behind the panel's disclosure now.
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const parsed = JSON.parse(readFileSync(await download.path(), 'utf8')) as {
@@ -629,7 +700,7 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a comment carries its author and its priority, and both survive a file',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
     /*
      * The two fields the on-page card added.
      *
@@ -647,9 +718,10 @@ testWithHostAccess(
     await settings.getByLabel('Your name').fill('Md Omar Faruque');
     await settings.close();
 
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);
@@ -667,12 +739,13 @@ testWithHostAccess(
     await page.locator('thursday-root .cm-add').click();
     await expect(page.locator(CARD)).toBeHidden({ timeout: 15_000 });
 
-    await panel.bringToFront();
     await expect(panel.locator('.comment-priority')).toHaveText('High');
     await expect(panel.locator('.comment-row')).toContainText('Md Omar Faruque');
 
+    // Save lives behind the panel's disclosure now.
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const text = readFileSync(await download.path(), 'utf8');
@@ -683,7 +756,7 @@ testWithHostAccess(
     expect(parsed.annotations?.[0]?.priority).toBe('high');
 
     // And back into a panel that has never seen this page.
-    const fresh = await openPanel(context, extensionId);
+    const fresh = await openPanel(page);
     await fresh.getByLabel('Open a saved audit file').setInputFiles({
       name: 'carried.thursday.json',
       mimeType: 'application/json',
@@ -696,10 +769,15 @@ testWithHostAccess(
 
 testWithHostAccess(
   'the priority can be changed afterwards, and editing the words does not invent one',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({
+  openFixture,
+  activate,
+  context,
+}) => {
+    await withoutPicker(context);
     const page = await openFixture('cro.html');
     await activate(page);
-    const panel = await openPanel(context, extensionId);
+    const panel = await openPanel(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await settle(panel);

@@ -1,4 +1,4 @@
-import { expect, test, testWithHostAccess, toolbar } from './fixtures';
+import { expect, panelOf, panelReady, test, testWithHostAccess, toolbar } from './fixtures';
 
 /**
  * Starting, stopping, restarting and refusing.
@@ -32,60 +32,68 @@ test('a page the browser withholds is refused up front, with the reason', async 
 
 testWithHostAccess(
   'a reload leaves an honest stopped state, and restarting restores everything',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate }) => {
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-    await expect(panel.getByText('Connected', { exact: true })).toBeVisible();
-    await panel.getByRole('button', { name: 'Full audit' }).click();
-    await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await panelReady(page);
+    // The panel says which page it is on. There is no "Connected" badge any
+    // more: the panel is mounted on the page, so its being there is the badge.
+    await expect(panelOf(page).locator('.head-origin')).toContainText('fixture.thursday.test');
+    await panelOf(page).getByRole('button', { name: 'Full audit' }).click();
+    await expect(panelOf(page).locator('.finding-row').first()).toBeVisible();
 
     await page.reload();
 
-    // Nothing is injected until asked, so the page is bare again -- and the
-    // panel says "Not running" rather than showing a Connected state it does
-    // not have.
+    /*
+     * Nothing is injected until asked, so the page is bare again -- and the
+     * panel goes with it, because the panel is part of what was injected.
+     * That is a change worth stating: a reload used to leave a panel behind
+     * saying "Not running", and now there is nothing to say it.
+     */
     await expect(page.locator('thursday-root')).toHaveCount(0);
-    await expect(panel.getByText('Not running', { exact: true })).toBeVisible();
 
     await activate(page);
     await expect(toolbar(page)).toBeVisible();
-    await expect(panel.getByText('Connected', { exact: true })).toBeVisible();
+    await panelReady(page);
+    await expect(panelOf(page).locator('.head-origin')).toContainText('fixture.thursday.test');
 
-    // And it works again, rather than needing the panel reopened.
-    await panel.getByRole('button', { name: 'Full audit' }).click();
-    await expect(panel.locator('.finding-row').first()).toBeVisible();
+    // And it works again, rather than needing anything reopened.
+    await panelOf(page).getByRole('button', { name: 'Full audit' }).click();
+    await expect(panelOf(page).locator('.finding-row').first()).toBeVisible();
     await expect(page.locator('thursday-root .pin').first()).toBeVisible();
   },
 );
 
 testWithHostAccess(
   'stopping removes everything from the page and the panel agrees',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate }) => {
     const page = await openFixture('accessibility.html');
     await activate(page);
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     await expect(page.locator('thursday-root .pin').first()).toBeVisible();
 
     await panel.getByRole('button', { name: /^Stop/ }).click();
 
+    /*
+     * Everything goes, the panel included.
+     *
+     * Stopping used to leave a side panel behind still showing the findings --
+     * "stopping is about the page, not about the audit". The panel lives on the
+     * page now, so stopping takes it too, and the audit survives in storage
+     * rather than on screen. Reactivating and reopening it from history is the
+     * path back, which persistence.spec covers.
+     */
     await expect(page.locator('thursday-root')).toHaveCount(0);
-    await expect(panel.getByText('Not running', { exact: true })).toBeVisible();
-
-    // The findings stay in the panel: stopping is about the page, not about
-    // throwing away the audit the user just ran.
-    await expect(panel.locator('.finding-row').first()).toBeVisible();
   },
 );
 
 testWithHostAccess(
   'two audited tabs do not get each other findings',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate }) => {
     // The panel routes to the tab actually running Thursday, not to whichever
     // tab happens to be in front (the Sprint 2 fix). Two live tabs is where
     // that goes wrong if it is going to.
@@ -94,9 +102,16 @@ testWithHostAccess(
     const second = await openFixture('control.html');
     await activate(second);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-    await second.bringToFront();
+    /*
+     * The panel on the second tab, which is the one being audited.
+     *
+     * Each activated tab has its own panel now, and each hears only about its
+     * own tab -- so "which tab does the panel route to" is answered by which
+     * panel you are looking at. Auditing from the second tab's panel must not
+     * touch the first.
+     */
+    await panelReady(second);
+    const panel = panelOf(second);
     await panel.getByRole('button', { name: 'Full audit' }).click();
 
     // control.html is clean, so the honest answer is that nothing was found.
@@ -108,7 +123,7 @@ testWithHostAccess(
 
 testWithHostAccess(
   'activating twice does not stack a second toolbar or a second port',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate }) => {
     const page = await openFixture('accessibility.html');
     await activate(page);
     await activate(page);
@@ -117,9 +132,9 @@ testWithHostAccess(
     expect(await page.locator('thursday-root').count()).toBe(1);
     expect(await page.locator('thursday-root .toolbar').count()).toBe(1);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-    await expect(panel.getByText('Connected', { exact: true })).toBeVisible();
+    await panelReady(page);
+    const panel = panelOf(page);
+    await expect(panel.locator('.head-origin')).toContainText('fixture.thursday.test');
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
 

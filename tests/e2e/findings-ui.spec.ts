@@ -11,7 +11,7 @@ async function audited(
   const page = await openFixture(fixture);
   await activate(page);
   const panel = await page.context().newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
   return { page, panel };
@@ -194,15 +194,21 @@ test('the panel meets its own contrast rule', async ({ openFixture, activate, ex
   const { panel } = await audited(openFixture, activate, extensionId);
 
   const samples = await panel.evaluate(() => {
+    /*
+     * Three of these went with the density cut: the brandmark, the footer line
+     * and the selected tab. What is left is what the panel still shows, plus
+     * the head's origin line and the priority chip, which are the coloured
+     * text the redesign added.
+     */
     const selectors = [
-      '.brandmark',
-      '.panel-foot span',
+      '.head-origin',
       '.section-title',
       '.finding-title',
       '.detail-summary',
       '.finding-block p',
       '.hint',
-      '.tabs button[aria-selected="true"]',
+      '.comment-priority',
+      '.more-toggle',
     ];
     const resolveBackground = (start: Element): string => {
       let node: Element | null = start;

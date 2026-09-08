@@ -14,20 +14,38 @@ import { ACTIVATE_COMMAND } from '../shared/constants/product';
  * the worker alive, and every port re-registers on reconnect.
  */
 const contentPorts = new Map<number, chrome.runtime.Port>();
-const panelPorts = new Set<chrome.runtime.Port>();
+/**
+ * Panel ports, keyed by the tab they are in.
+ *
+ * A set used to be enough, because there was one side panel. Now the panel is
+ * a frame the content script mounts, so every activated tab has one -- and
+ * broadcasting to all of them meant pressing Audit on one tab made every other
+ * tab's panel audit *this* tab and display its findings. A panel belongs to a
+ * tab, so it hears about that tab.
+ *
+ * The undefined key holds panels opened outside a tab -- a panel document
+ * opened directly, which is how the tests and a debugging session reach it.
+ * Those hear everything, because there is nothing better to tell them.
+ */
+const panelPorts = new Map<chrome.runtime.Port, number | undefined>();
+
+/**
+ * Tabs where a comment was stored while no panel was listening.
+ *
+ * The worker tells panels when it stores one, but the panel it needs to tell is
+ * often the one that has not reconnected yet -- that is why the worker had to
+ * store it in the first place. So the notice is held until a panel for that tab
+ * turns up, rather than broadcast into an empty room.
+ *
+ * Lost when the worker is collected, which is fine: it only has to survive the
+ * couple of seconds between storing a note and a panel reconnecting.
+ */
+const pendingNotes = new Set<number>();
 
 /** The tab the user most recently activated. See targetTab(). */
 let lastActivatedTabId: number | undefined;
 
 const CONTENT_SCRIPT_FILE = 'content.js';
-
-// The popup opens the side panel itself (it has the user gesture), so the action
-// click must not also toggle it.
-chrome.runtime.onInstalled.addListener(() => {
-  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {
-    /* older Chrome: default behaviour is fine */
-  });
-});
 
 async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
@@ -53,7 +71,22 @@ async function targetTab(): Promise<number | undefined> {
 
 function toPanels(message: ThursdayMessage, tabId?: number): void {
   const envelope: Envelope = tabId === undefined ? { from: 'content', message } : { from: 'content', tabId, message };
-  for (const port of panelPorts) {
+  for (const [port, home] of panelPorts) {
+    /*
+     * A panel that belongs to an audited page hears only that page.
+     *
+     * Every real panel is one: it is a frame the content script mounts, so its
+     * tab always has a content port. That is what stops an audit on one tab
+     * appearing in another tab's panel -- which it did, because there is now a
+     * panel on every activated tab rather than one side panel for the window.
+     *
+     * A panel whose own tab has no content script is not that. It is a panel
+     * document somebody opened directly -- debugging, or the test harness
+     * standing in for a panel -- and it has no page of its own to be about, so
+     * it hears everything.
+     */
+    const ownsAPage = home !== undefined && contentPorts.has(home);
+    if (ownsAPage && tabId !== undefined && home !== tabId) continue;
     try {
       port.postMessage(envelope);
     } catch {
@@ -100,18 +133,17 @@ async function activate(tabId: number, url: string | undefined): Promise<{ ok: b
  *
  * Like clicking the action, pressing it is a user gesture that grants
  * activeTab -- which is why activation can start here and not from a button
- * inside the side panel (PLAN.md section 2.1). It also opens the panel, since
- * the gesture is what makes that allowed.
+ * inside the panel (PLAN.md section 2.1).
+ *
+ * There is nothing to open any more: the panel is part of what gets injected,
+ * so activating is the whole of it.
  */
 chrome.commands.onCommand.addListener((command) => {
   if (command !== ACTIVATE_COMMAND) return;
   void (async () => {
     const tab = await getActiveTab();
     if (tab?.id === undefined) return;
-    // Opened first: the gesture window closes once we start awaiting other work.
-    const panel = chrome.sidePanel.open({ tabId: tab.id }).catch(() => undefined);
     const result = await activate(tab.id, tab.url);
-    await panel;
     if (!result.ok) panelError(result.code ?? 'UNKNOWN');
   })();
 });
@@ -180,8 +212,19 @@ chrome.runtime.onConnect.addListener((port) => {
   }
 
   if (port.name === 'sidepanel') {
-    panelPorts.add(port);
+    // A panel framed in a page reports the containing tab; one opened as its
+    // own document reports none.
+    const home = port.sender?.tab?.id;
+    panelPorts.set(port, home);
     port.onDisconnect.addListener(() => panelPorts.delete(port));
+    // A comment stored while nothing was listening: tell this panel to look.
+    if (home !== undefined && pendingNotes.delete(home)) {
+      try {
+        port.postMessage({ from: 'content', tabId: home, message: { type: 'COMMENTS_CHANGED' } });
+      } catch {
+        pendingNotes.add(home);
+      }
+    }
     port.onMessage.addListener((raw: unknown) => {
       if (!isEnvelope(raw)) return;
       void routeFromPanel(raw.message);
@@ -230,7 +273,9 @@ async function storeWithoutPanel(tabId: number, submission: AnnotationSubmission
     await saveAnnotation(annotation, blobs);
     reply({ type: 'ANNOTATION_SAVED', payload: { ok: true } });
     // Any panel that has appeared in the meantime is told to look, because it
-    // may have already checked and found nothing.
+    // may have already checked and found nothing. If none has, the notice
+    // waits for one -- see pendingNotes.
+    pendingNotes.add(tabId);
     toPanels({ type: 'COMMENTS_CHANGED' }, tabId);
   } catch {
     reply({

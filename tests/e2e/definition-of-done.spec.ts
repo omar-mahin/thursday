@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import type { Page } from '@playwright/test';
-import { expect, testWithHostAccess as test } from './fixtures';
+import type { FrameLocator, Page } from '@playwright/test';
+import { expect, openMore, panelOf, panelReady, testWithHostAccess as test, toolbar, withoutPicker } from './fixtures';
 import { parseAuditFile } from '../../src/storage/file';
 
 /**
@@ -11,29 +11,31 @@ import { parseAuditFile } from '../../src/storage/file';
  * breaks the shape of the work rather than a particular function, it breaks
  * here first.
  */
-async function panelFor(page: Page, extensionId: string): Promise<Page> {
-  const panel = await page.context().newPage();
-  await panel.addInitScript(() => {
-    // No test can drive a native save dialog; the anchor fallback writes the
-    // same bytes. See tests/e2e/files.spec.ts.
-    Reflect.deleteProperty(window, 'showSaveFilePicker');
-  });
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  return panel;
+/**
+ * The panel, as the user has it: floating on the page being audited.
+ *
+ * No test can drive a native save dialog, so the picker is taken away first
+ * and the anchor fallback writes the same bytes (see files.spec.ts). It has to
+ * happen before the panel frame exists, which is what withoutPicker handles.
+ */
+async function panelFor(page: Page): Promise<FrameLocator> {
+  await panelReady(page);
+  return panelOf(page);
 }
 
 test('flow 1: activate, audit, read a finding, jump to it, resolve it, save the file', async ({
   openFixture,
   activate,
-  extensionId,
+  context,
 }) => {
   // --- activate -----------------------------------------------------------
+  await withoutPicker(context);
   const page = await openFixture('accessibility.html');
   await activate(page);
   await expect(page.locator('thursday-root .toolbar')).toBeVisible();
 
-  const panel = await panelFor(page, extensionId);
-  await expect(panel.getByText('Connected')).toBeVisible();
+  const panel = await panelFor(page);
+  await expect(panel.locator('.head-origin')).toContainText('fixture.thursday.test');
 
   // --- audit --------------------------------------------------------------
   await panel.getByRole('button', { name: 'Full audit' }).click();
@@ -75,8 +77,10 @@ test('flow 1: activate, audit, read a finding, jump to it, resolve it, save the 
   await expect(panel.locator('.closed-toggle')).toContainText('dismissed or resolved');
 
   // --- save the file ------------------------------------------------------
+  // Save lives behind the panel's disclosure now.
+  await openMore(page);
   const download = await Promise.all([
-    panel.waitForEvent('download'),
+    page.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save audit' }).click(),
   ]).then(([event]) => event);
 
@@ -100,15 +104,18 @@ test('flow 1: activate, audit, read a finding, jump to it, resolve it, save the 
 test('flow 2: activate, select an element, read its contextual finding, add it to a report, export', async ({
   openFixture,
   activate,
-  extensionId,
+  context,
 }) => {
   // --- activate -----------------------------------------------------------
+  await withoutPicker(context);
   const page = await openFixture('accessibility.html');
   await activate(page);
-  const panel = await panelFor(page, extensionId);
+  const panel = await panelFor(page);
 
   // --- select an element --------------------------------------------------
-  await panel.getByRole('button', { name: 'Select an element' }).click();
+  // Selection starts from the page toolbar now: the panel's own Select card
+  // went with the density cut, and the ruler is what Select shows.
+  await toolbar(page).getByRole('button', { name: 'Select' }).click();
   await expect(page.locator('thursday-root .hl-box')).toBeHidden();
 
   // The unlabelled image: something an audit has an opinion about.
@@ -118,12 +125,17 @@ test('flow 2: activate, select an element, read its contextual finding, add it t
   await expect(page.locator('thursday-root .rl-outline')).toHaveAttribute('data-on', 'true');
   await target.click({ position: { x: 5, y: 5 } });
 
-  // --- its measured facts appear -----------------------------------------
-  await expect(panel.locator('#panel-element')).toBeVisible();
-  await expect(panel.locator('[data-card="identity"]')).toContainText('img');
+  /*
+   * --- its measured facts appear -----------------------------------------
+   *
+   * On the page, in the ruler's own bar, rather than in a panel tab. The
+   * Element tab and its inspector are gone: once Select grew into a ruler that
+   * reads an element on hover, the tab was a second home for what the page
+   * already showed.
+   */
+  await expect(page.locator('thursday-root .rl-hud')).toContainText('px');
 
   // --- audit, and find the finding about that element ---------------------
-  await panel.getByRole('tab', { name: /^Audit/ }).click();
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
 
@@ -140,8 +152,10 @@ test('flow 2: activate, select an element, read its contextual finding, add it t
   await panel.locator('.detail-title').click();
 
   // --- export HTML --------------------------------------------------------
+  // Save lives behind the panel's disclosure now.
+  await openMore(page);
   const download = await Promise.all([
-    panel.waitForEvent('download'),
+    page.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save report' }).click(),
   ]).then(([event]) => event);
 

@@ -26,20 +26,24 @@ const SOURCES: Record<ToolbarAction, string> = {
   audit: 'audit.svg',
   select: 'select.svg',
   comment: 'comment.svg',
-  inspect: 'inspect.svg',
   close: 'cancel.svg',
 };
 
 /**
  * Drawings in design/icons/ that no action uses.
  *
- * Both were buttons that got removed rather than icons nobody got round to:
- * Report duplicated the panel's Save report and Save PDF, and Settings opened a
- * page nobody reaches for mid-audit and which the popup already offers. The
- * artwork is kept in case either comes back, and named here so an unused file
- * is a decision on the record rather than a drawing somebody forgot to wire up.
+ * All three were buttons that got removed rather than icons nobody got round
+ * to. Report duplicated the panel's Save report and Save PDF. Settings opened a
+ * page nobody reaches for mid-audit and which the popup already offers. Inspect
+ * switched the panel to an Element tab, and once Select grew into a ruler that
+ * reads an element on hover, that tab was a second home for what the page
+ * already showed.
+ *
+ * The artwork is kept in case any of them comes back, and named here so an
+ * unused file is a decision on the record rather than a drawing somebody forgot
+ * to wire up.
  */
-const UNUSED = ['report.svg', 'settings.svg'];
+const UNUSED = ['inspect.svg', 'report.svg', 'settings.svg'];
 
 const read = (file: string): string => readFileSync(resolve('design/icons', file), 'utf8');
 

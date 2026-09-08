@@ -17,7 +17,7 @@ async function snapshot(
   const page = await context.openFixture(fixture);
   await activate(page);
   const panel = await page.context().newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await page.bringToFront();
   const message = await exchange<{ payload: PageSnapshot }>(
     panel,
@@ -128,7 +128,7 @@ test('a 3000-node page stays inside the element cap and the time budget', async 
 
   await activate(page);
   const panel = await page.context().newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await page.bringToFront();
 
   // includeOffscreen exercises the full cap path rather than the culled one.
@@ -151,7 +151,7 @@ test('offscreen culling keeps a long page cheap to scan', async ({ openFixture, 
   const page = await openFixture('heavy.html');
   await activate(page);
   const panel = await page.context().newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await page.bringToFront();
 
   const message = await exchange<{ payload: PageSnapshot }>(

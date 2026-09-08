@@ -15,6 +15,7 @@ import { createHost, type ShadowHost } from './host';
 import { createHighlight, describeForLabel, type Highlight } from './overlay/highlight';
 import { createRuler, type Ruler } from './overlay/ruler';
 import { createComposer, type Composer } from './annotate/composer';
+import { createPanelFrame, type PanelFrame } from './panel/frame';
 import { IMAGE_REFUSALS, prepareImage } from '../shared/media/image';
 import { blobToDataUrl } from '../shared/utils/base64';
 import { newId } from '../shared/utils/id';
@@ -121,6 +122,7 @@ function install(): void {
   let highlight: Highlight | null = null;
   let ruler: Ruler | null = null;
   let composer: Composer | null = null;
+  let panel: PanelFrame | null = null;
   /** The element the open card is about. */
   let pendingTarget: AnnotationTarget | null = null;
   /** The name the composer shows and stamps on a comment. */
@@ -159,7 +161,7 @@ function install(): void {
    * only at the moment something is clicked -- so the intent is recorded when
    * picking starts rather than threaded through every event handler.
    */
-  let picking: 'inspect' | 'comment' = 'inspect';
+  let picking: 'measure' | 'comment' = 'measure';
   let reconnectAttempts = 0;
   let disposed = false;
 
@@ -219,7 +221,7 @@ function install(): void {
         announceActivation();
         return;
       case 'START_SELECTION':
-        startPicking('inspect');
+        startPicking('measure');
         return;
       case 'CANCEL_SELECTION':
       case 'CANCEL_ANNOTATION':
@@ -312,11 +314,11 @@ function install(): void {
     }
   };
 
-  const startPicking = (purpose: 'inspect' | 'comment'): void => {
+  const startPicking = (purpose: 'measure' | 'comment'): void => {
     picking = purpose;
     // The ruler is for inspecting. Picking somewhere to leave a comment is a
     // question about which element, and a measurement bar over it is noise.
-    selection?.start({ measure: purpose === 'inspect' });
+    selection?.start({ measure: purpose === 'measure' });
   };
 
   /**
@@ -660,7 +662,7 @@ function install(): void {
       return;
     }
     if (action === 'select' || action === 'comment') {
-      const purpose = action === 'comment' ? 'comment' : 'inspect';
+      const purpose = action === 'comment' ? 'comment' : 'measure';
       // A second press of the same button cancels; pressing the other one
       // switches purpose rather than stacking two pickers.
       if (selection?.isActive() && picking === purpose) selection.cancel();
@@ -677,6 +679,7 @@ function install(): void {
     post({ type: 'DEACTIVATED' });
     pins?.destroy();
     selection?.destroy();
+    panel?.destroy();
     composer?.destroy();
     ruler?.destroy();
     highlight?.destroy();
@@ -836,6 +839,27 @@ function install(): void {
       onMoved: (position) => void setSetting('toolbarPosition', position),
     });
     host.layer.append(toolbar.element);
+
+    /*
+     * The panel, floating over the page.
+     *
+     * An iframe of an extension document rather than markup built here: the
+     * panel needs the extension origin to reach IndexedDB and chrome.* at all,
+     * so this is the only way it can be both the real panel and somewhere the
+     * user chose to put it.
+     */
+    void getSetting('panelGeometry').then((saved) => {
+      if (disposed) return;
+      panel = createPanelFrame(host!.layer, {
+        src: chrome.runtime.getURL('panel.html'),
+        onMoved: (geometry) => void setSetting('panelGeometry', geometry),
+        // Closing the panel leaves Thursday running: the toolbar, the ruler and
+        // the comment card all work without it, and the toolbar's Inspect
+        // button brings it back.
+        onClose: () => panel?.collapse(true),
+      });
+      panel.place(saved);
+    });
     // Measured, not guessed: the toolbar has to be in the document before its
     // width is knowable, and the width changed when the labels became icons.
     if (!saved) toolbar.centre();
@@ -844,7 +868,6 @@ function install(): void {
     // permanently greyed out.
     toolbar.setEnabled('audit', true);
     toolbar.setEnabled('select', true);
-    toolbar.setEnabled('inspect', true);
     /*
      * On from the moment Thursday is on the page.
      *

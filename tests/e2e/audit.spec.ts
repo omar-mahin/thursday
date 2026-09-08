@@ -26,7 +26,7 @@ async function auditFixture(
   if (viewport) await page.setViewportSize(viewport);
   await activate(page);
   const panel = await page.context().newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await page.bringToFront();
   const message = await exchange<{ payload: PageSnapshot }>(
     panel,

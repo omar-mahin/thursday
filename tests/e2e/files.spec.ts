@@ -1,7 +1,6 @@
 import { resolve } from 'node:path';
 import { readFileSync } from 'node:fs';
-import { expect, test, testWithHostAccess, FIXTURE_ORIGIN } from './fixtures';
-import type { Page } from '@playwright/test';
+import { FIXTURE_ORIGIN, expect, openMore, panelOf, panelReady, test, testWithHostAccess, withoutPicker } from './fixtures';
 
 /**
  * Files on disk, which is how an audit leaves this machine when the user says
@@ -12,16 +11,11 @@ import type { Page } from '@playwright/test';
  * the anchor fallback -- the same Blob, the same file name, the same bytes. The
  * picker itself is verified by hand.
  */
-async function withoutPicker(panel: Page): Promise<void> {
-  await panel.addInitScript(() => {
-    Reflect.deleteProperty(window, 'showSaveFilePicker');
-  });
-}
 
 const openPanel = async (context: import('@playwright/test').BrowserContext, extensionId: string) => {
   const panel = await context.newPage();
-  await withoutPicker(panel);
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await withoutPicker(context);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   return panel;
 };
 
@@ -89,11 +83,13 @@ test('a file that is not an audit is refused with a plain explanation', async ({
 
 testWithHostAccess(
   'a saved audit file reopens with everything the panel had',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
+    await withoutPicker(context);
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     const titles = await panel.locator('.finding-row .finding-title').allInnerTexts();
@@ -101,8 +97,10 @@ testWithHostAccess(
     await panel.locator('.detail-note textarea').fill('Look at this one first');
     await panel.locator('.detail-title').click();
 
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      // The panel is a frame of the page, so the download lands on the page.
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
 
@@ -127,16 +125,20 @@ testWithHostAccess(
 
 testWithHostAccess(
   'the exported HTML report opens with no network access at all',
-  async ({ openFixture, activate, extensionId, context, requests }) => {
+  async ({ openFixture, activate, context, requests }) => {
+    await withoutPicker(context);
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
 
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      // The panel is a frame of the page, so the download lands on the page.
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save report' }).click(),
     ]).then(([event]) => event);
 
@@ -182,11 +184,13 @@ testWithHostAccess(
 
 testWithHostAccess(
   'the report contains only the findings the user chose',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context }) => {
+    await withoutPicker(context);
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await openPanel(context, extensionId);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.detail').first()).toBeVisible();
 
@@ -194,8 +198,10 @@ testWithHostAccess(
     await panel.locator('.detail').getByRole('button', { name: 'Add to report' }).click();
     await expect(panel.locator('.detail').getByRole('button', { name: 'In report' })).toBeVisible();
 
+    await openMore(page);
     const download = await Promise.all([
-      panel.waitForEvent('download'),
+      // The panel is a frame of the page, so the download lands on the page.
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save report' }).click(),
     ]).then(([event]) => event);
 

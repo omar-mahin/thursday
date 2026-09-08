@@ -30,23 +30,14 @@ export function Popup(): React.ReactElement {
   const verdict = checkUrl(tab?.url);
   const canActivate = verdict.auditable && tab?.tabId !== undefined;
 
-  const openPanel = useCallback(async (tabId: number) => {
-    // Must run inside the click handler's gesture window, before any await.
-    try {
-      await chrome.sidePanel.open({ tabId });
-    } catch {
-      setError('Could not open the side panel.');
-    }
-  }, []);
-
   const activate = useCallback(() => {
     if (tab?.tabId === undefined) return;
     setBusy(true);
     setError(null);
-    const panel = openPanel(tab.tabId);
     void (async () => {
+      // The panel is part of what gets injected now, so activating is the
+      // whole of it: there is no second surface to open.
       const result = await sendCommand<Result<void>>({ type: 'ACTIVATE_PAGE' });
-      await panel;
       setBusy(false);
       if (!result.ok) {
         setError(USER_MESSAGES[result.error.code]);
@@ -55,7 +46,7 @@ export function Popup(): React.ReactElement {
       setActivated(true);
       window.close();
     })();
-  }, [openPanel, tab]);
+  }, [tab]);
 
   const deactivate = useCallback(() => {
     setBusy(true);
@@ -93,11 +84,12 @@ export function Popup(): React.ReactElement {
               className="primary"
               disabled={tab?.tabId === undefined}
               onClick={() => {
-                if (tab?.tabId !== undefined) void openPanel(tab.tabId);
+                // Already running on this tab, so the panel is already on it.
+                // Nothing to open -- this just gets out of the way.
                 window.close();
               }}
             >
-              Open audit panel
+              Back to the page
             </button>
             <button type="button" onClick={deactivate} disabled={busy}>
               Stop on this page

@@ -1,4 +1,13 @@
-import { expect, test, testWithHostAccess } from './fixtures';
+import {
+  expect,
+  extensionPage,
+  openMore,
+  openMoreIn,
+  panelOf,
+  panelReady,
+  test,
+  testWithHostAccess,
+} from './fixtures';
 
 /**
  * IndexedDB, against real IndexedDB.
@@ -10,12 +19,18 @@ import { expect, test, testWithHostAccess } from './fixtures';
  */
 
 test('the panel creates its stores and indexes on first open', async ({ extensionId, context }) => {
+  /*
+   * Opened as its own document rather than as the frame on a page.
+   *
+   * This test is about the database, not the workflow: what matters is that
+   * loading the panel creates the stores. Tests that press Audit must use the
+   * floating frame -- two panel documents are two panels, and they audit twice.
+   */
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  // Opening the panel opens the database (history is read for the active origin).
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await expect(panel.locator('.panel-head')).toBeVisible();
 
-  const shape = await panel.evaluate(
+  const shape = await (await extensionPage(context, extensionId)).evaluate(
     () =>
       new Promise<{
         version: number;
@@ -138,13 +153,15 @@ test('upgrading from version 1 adds the new stores and keeps the old rows', asyn
   await seeder.close();
 
   // Opening the panel opens the database at the version this build wants,
-  // which is what runs the migration.
+  // which is what runs the migration. Its own document again: this is about
+  // storage, not about driving an audit.
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await expect(panel.locator('.panel-head')).toBeVisible();
+  await openMoreIn(panel);
   await expect(panel.locator('.history-row')).toHaveCount(1);
 
-  const after = await panel.evaluate(
+  const after = await (await extensionPage(context, extensionId)).evaluate(
     () =>
       new Promise<{ version: number; stores: string[]; audits: number; findings: number }>(
         (resolve, reject) => {
@@ -176,29 +193,32 @@ test('upgrading from version 1 adds the new stores and keeps the old rows', asyn
 
 testWithHostAccess(
   'an audit is written to storage and survives the panel closing',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
 
     // History appears without a reload, because the audit was just stored.
+    await openMore(page);
     await expect(panel.locator('.history-row').first()).toBeVisible();
     const listed = await panel.locator('.history-row').count();
     expect(listed).toBeGreaterThan(0);
 
-    // Close the panel entirely: this is the state a browser restart leaves.
-    await panel.close();
+    /*
+     * The panel below is a different panel entirely -- its own document, which
+     * never saw this audit run. That is the claim: the findings come out of
+     * storage rather than out of the memory of the thing that produced them.
+     */
 
     const reopened = await context.newPage();
-    await reopened.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-    await page.bringToFront();
-    await reopened.bringToFront();
+    await reopened.goto(`chrome-extension://${extensionId}/panel.html`);
 
     // The audit is still there, and it is the one just run.
+    await openMoreIn(reopened);
     await expect(reopened.locator('.history-row').first()).toBeVisible();
     await expect(reopened.locator('.history-count').first()).toContainText('finding');
   },
@@ -206,23 +226,25 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a stored audit reopens with its findings and pins the live page',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
     const firstTitle = await panel.locator('.finding-row .finding-title').first().innerText();
+    await openMore(page);
     await expect(panel.locator('.history-row').first()).toBeVisible();
-    await panel.close();
+    // A different panel below: its own document, which never saw this audit run.
 
     // A fresh panel with no audit of its own.
     const reopened = await context.newPage();
-    await reopened.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await reopened.goto(`chrome-extension://${extensionId}/panel.html`);
     await expect(reopened.locator('.finding-row')).toHaveCount(0);
 
+    await openMoreIn(reopened);
     await reopened.locator('.history-open').first().click();
     await expect(reopened.locator('.finding-row').first()).toBeVisible();
     await expect(reopened.locator('.finding-row .finding-title').first()).toHaveText(firstTitle);
@@ -231,7 +253,6 @@ testWithHostAccess(
     await expect(reopened.locator('.notice')).toContainText('Reopened from history');
 
     // And the page gets its pins back.
-    await page.bringToFront();
     await expect(page.locator('thursday-root .pin').first()).toBeVisible();
     expect(await page.locator('thursday-root .pin').count()).toBeGreaterThan(0);
   },
@@ -239,25 +260,25 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a reopened audit keeps exact pins while the page it measured is still loaded',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
     // The stored digest carries the snapshot id, and this page still holds the
     // elements from that snapshot -- so the fast path is genuinely valid and
     // the pins are measurements, not guesses.
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
-    await panel.close();
+    // A different panel below: its own document, which never saw this audit run.
 
     const reopened = await context.newPage();
-    await reopened.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await reopened.goto(`chrome-extension://${extensionId}/panel.html`);
+    await openMoreIn(reopened);
     await reopened.locator('.history-open').first().click();
     await expect(reopened.locator('.finding-row').first()).toBeVisible();
 
-    await page.bringToFront();
     await expect(page.locator('thursday-root .pin').first()).toBeVisible();
     const approximate = await page
       .locator('thursday-root .pin')
@@ -268,28 +289,28 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a reopened audit draws approximate pins once the page has reloaded',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
     // This is the state a restart leaves: the audit is on disk, but nothing in
     // the page remembers the elements it measured. Every pin is then a search
     // result, and is drawn as one.
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.finding-row').first()).toBeVisible();
-    await panel.close();
+    // A different panel below: its own document, which never saw this audit run.
 
     await page.reload();
     await activate(page);
 
     const reopened = await context.newPage();
-    await reopened.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await reopened.goto(`chrome-extension://${extensionId}/panel.html`);
+    await openMoreIn(reopened);
     await reopened.locator('.history-open').first().click();
     await expect(reopened.locator('.finding-row').first()).toBeVisible();
 
-    await page.bringToFront();
     await expect(page.locator('thursday-root .pin').first()).toBeVisible();
     const approximate = await page
       .locator('thursday-root .pin')
@@ -301,12 +322,12 @@ testWithHostAccess(
 
 testWithHostAccess(
   'a status set on a finding is still set after reopening the audit',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.detail').first()).toBeVisible();
 
@@ -317,10 +338,11 @@ testWithHostAccess(
     // Blur, so the write is not racing an in-flight keystroke.
     await panel.locator('.detail-title').click();
     await expect(panel.locator('.detail').getByRole('button', { name: 'In report' })).toBeVisible();
-    await panel.close();
+    // A different panel below: its own document, which never saw this audit run.
 
     const reopened = await context.newPage();
-    await reopened.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await reopened.goto(`chrome-extension://${extensionId}/panel.html`);
+    await openMoreIn(reopened);
     await reopened.locator('.history-open').first().click();
     await expect(reopened.locator('.finding-row').first()).toBeVisible();
 
@@ -334,22 +356,27 @@ testWithHostAccess(
 
 testWithHostAccess(
   'deleting an audit removes it and its findings',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
+    // Wait for the audit before reaching into history: the row only exists
+    // once the audit has been stored.
+    await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await openMore(page);
     await expect(panel.locator('.history-row').first()).toBeVisible();
 
     await panel.locator('.history-row').first().getByRole('button', { name: /^Delete the audit/ }).click();
     await panel.locator('.history-row').first().getByRole('button', { name: 'Delete', exact: true }).click();
 
+    await openMore(page);
     await expect(panel.locator('.history-row')).toHaveCount(0);
 
     // The findings went with it: no orphan rows left behind.
-    const orphans = await panel.evaluate(
+    const orphans = await (await extensionPage(context, extensionId)).evaluate(
       () =>
         new Promise<number>((resolve, reject) => {
           const request = indexedDB.open('thursday');
@@ -368,13 +395,17 @@ testWithHostAccess(
 
 testWithHostAccess(
   'clearing everything from settings empties the database',
-  async ({ openFixture, activate, extensionId, context }) => {
+  async ({ openFixture, activate, context, extensionId }) => {
     const page = await openFixture('accessibility.html');
     await activate(page);
 
-    const panel = await context.newPage();
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
     await panel.getByRole('button', { name: 'Full audit' }).click();
+    // Wait for the audit before reaching into history: the row only exists
+    // once the audit has been stored.
+    await expect(panel.locator('.finding-row').first()).toBeVisible();
+    await openMore(page);
     await expect(panel.locator('.history-row').first()).toBeVisible();
 
     const options = await context.newPage();

@@ -9,9 +9,12 @@ import { ACTIVATE_COMMAND, ACTIVATE_SHORTCUT } from '../../src/shared/constants/
 describe('manifest', () => {
   const record = manifest as unknown as Record<string, unknown>;
 
-  it('requests exactly four permissions', () => {
-    expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting', 'sidePanel']);
-    expect(REQUIRED_PERMISSIONS).toHaveLength(4);
+  it('requests exactly three permissions', () => {
+    // Was four. `sidePanel` went when the panel became a floating frame the
+    // content script mounts itself -- a capability removed by a redesign
+    // rather than kept in case.
+    expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting']);
+    expect(REQUIRED_PERMISSIONS).toHaveLength(3);
   });
 
   it('requests no host access', () => {
@@ -23,9 +26,30 @@ describe('manifest', () => {
     expect(record['content_scripts']).toBeUndefined();
   });
 
-  it('exposes nothing to web pages and accepts no external messages', () => {
-    expect(record['web_accessible_resources']).toBeUndefined();
+  it('accepts no external messages', () => {
     expect(record['externally_connectable']).toBeUndefined();
+  });
+
+  it('exposes exactly one resource to web pages, on a rotating URL', () => {
+    /*
+     * The panel is an extension document -- it needs the extension origin to
+     * reach IndexedDB at all -- so floating it over the page means framing it,
+     * and framing an extension page inside a web page requires that page to be
+     * web-accessible. This is the one deliberate widening in the manifest.
+     *
+     * Asserted field by field rather than as "something is declared", because
+     * the whole value is in the narrowness: one file, and `use_dynamic_url` so
+     * the address is unguessable and rotates instead of being hard-codeable by
+     * a site. The frame is also cross-origin to its host page, so a hostile
+     * page can embed it and read nothing out of it.
+     */
+    expect(record['web_accessible_resources']).toEqual([
+      { resources: ['panel.html'], matches: ['<all_urls>'], use_dynamic_url: true },
+    ]);
+  });
+
+  it('no longer declares a side panel', () => {
+    expect(record['side_panel']).toBeUndefined();
   });
 
   it('is manifest v3 with a module service worker', () => {
@@ -45,10 +69,22 @@ describe('manifest', () => {
  * shipped one is the one with nothing extra in it.
  */
 describe('the shipped build against the test build', () => {
+  const shipped = manifest as unknown as Record<string, unknown>;
+
   it('never grants itself the capture permission the test build needs', () => {
-    // scripts/build-test-extension.mjs adds <all_urls> for captureVisibleTab.
-    // In the shipped build that call is authorised by activeTab and nothing else.
-    expect(JSON.stringify(manifest)).not.toContain('all_urls');
+    /*
+     * scripts/build-test-extension.mjs adds <all_urls> to `host_permissions`
+     * for captureVisibleTab. In the shipped build that call is authorised by
+     * activeTab and nothing else.
+     *
+     * Checked on host_permissions specifically rather than on the whole
+     * manifest text, because `<all_urls>` now legitimately appears in
+     * web_accessible_resources -- and a grep of the whole file would pass for
+     * the wrong reason or fail for the wrong one.
+     */
+    expect(shipped['host_permissions']).toBeUndefined();
+    expect(shipped['optional_host_permissions']).toBeUndefined();
+    expect(manifest.permissions).not.toContain('<all_urls>');
   });
 
   it('relies on activeTab for tab capture', () => {
@@ -81,6 +117,6 @@ describe('the keyboard shortcut', () => {
   });
 
   it('adds no permission', () => {
-    expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting', 'sidePanel']);
+    expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting']);
   });
 });

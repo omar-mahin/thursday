@@ -1,4 +1,4 @@
-import { expect, testWithCapture as test } from './fixtures';
+import { expect, openMoreIn, testWithCapture as test } from './fixtures';
 import type { BrowserContext, Page } from '@playwright/test';
 
 /**
@@ -24,7 +24,7 @@ import type { BrowserContext, Page } from '@playwright/test';
 
 const openPanel = async (context: BrowserContext, extensionId: string): Promise<Page> => {
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   return panel;
 };
 
@@ -217,6 +217,7 @@ test('a comment written with the side panel closed is still kept', async ({
 
   // And a panel opened afterwards has it, without a re-audit.
   const later = await openPanel(context, extensionId);
+  await openMoreIn(later);
   await later.locator('.history-open').first().click();
   await expect(later.locator('.comment-body')).toHaveText('Written with the panel shut.');
 });

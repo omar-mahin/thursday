@@ -1,11 +1,15 @@
 import { resolve } from 'node:path';
 import {
-  expect,
   FIXTURE_ORIGIN,
+  expect,
   injectContentScript,
+  openMore,
+  panelOf,
+  panelReady,
   test,
   testWithHostAccess,
   toolbar,
+  withoutPicker,
 } from './fixtures';
 
 /**
@@ -16,8 +20,10 @@ import {
  * be either the locally-fulfilled fixture page or an internal extension URL.
  */
 test('the extension makes no network requests at all', async ({ context, extensionId, requests, openFixture }) => {
+  // The panel document on its own, before any page: the point here is that
+  // loading every surface asks the network for nothing.
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await expect(panel.getByText('Not running', { exact: true })).toBeVisible();
 
   const popup = await context.newPage();
@@ -49,29 +55,29 @@ test('the extension makes no network requests at all', async ({ context, extensi
 testWithHostAccess(
   'storing, exporting and reopening audits makes no network requests either',
   async ({ context, extensionId, requests, openFixture, activate }) => {
+    await withoutPicker(context);
     const page = await openFixture('accessibility.html');
     await activate(page);
-
-    const panel = await context.newPage();
-    await panel.addInitScript(() => {
-      Reflect.deleteProperty(window, 'showSaveFilePicker');
-    });
-    await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+    await panelReady(page);
+    const panel = panelOf(page);
 
     // Run, triage, store.
     await panel.getByRole('button', { name: 'Full audit' }).click();
     await expect(panel.locator('.detail')).toBeVisible();
     await panel.locator('.detail').getByRole('button', { name: 'Add to report' }).click();
     await panel.locator('.detail-note textarea').fill('A note that stays on this machine');
+    await openMore(page);
     await expect(panel.locator('.history-row').first()).toBeVisible();
 
     // Write both file formats.
+    // Saving and opening live behind the panel's disclosure now.
+    await openMore(page);
     await Promise.all([
-      panel.waitForEvent('download'),
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]);
     await Promise.all([
-      panel.waitForEvent('download'),
+      page.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save report' }).click(),
     ]);
 

@@ -8,7 +8,6 @@ const PERMISSION_REASONS: Record<(typeof REQUIRED_PERMISSIONS)[number], string> 
   storage: 'Remembers your settings and audits on this machine.',
   activeTab: 'Reads the page you explicitly activate, and only that page.',
   scripting: 'Injects the toolbar when you click Activate.',
-  sidePanel: 'Shows the audit panel beside the page.',
 };
 
 const formatBytes = (bytes: number): string => {
@@ -35,16 +34,32 @@ export function Options(): React.ReactElement {
 
   useEffect(() => {
     void (async () => {
-      const [authorName, theme, minTouchTarget, toolbarPosition, keepHistory, captureScreenshots] =
-        await Promise.all([
-          getSetting('authorName'),
-          getSetting('theme'),
-          getSetting('minTouchTarget'),
-          getSetting('toolbarPosition'),
-          getSetting('keepHistory'),
-          getSetting('captureScreenshots'),
-        ]);
-      setSettings({ authorName, theme, minTouchTarget, toolbarPosition, keepHistory, captureScreenshots });
+      const [
+        authorName,
+        theme,
+        minTouchTarget,
+        toolbarPosition,
+        panelGeometry,
+        keepHistory,
+        captureScreenshots,
+      ] = await Promise.all([
+        getSetting('authorName'),
+        getSetting('theme'),
+        getSetting('minTouchTarget'),
+        getSetting('toolbarPosition'),
+        getSetting('panelGeometry'),
+        getSetting('keepHistory'),
+        getSetting('captureScreenshots'),
+      ]);
+      setSettings({
+        authorName,
+        theme,
+        minTouchTarget,
+        toolbarPosition,
+        panelGeometry,
+        keepHistory,
+        captureScreenshots,
+      });
     })();
   }, []);
 
@@ -150,14 +165,21 @@ export function Options(): React.ReactElement {
         </div>
         <div className="field">
           <div>
-            <div className="field-label">Toolbar position</div>
+            <div className="field-label">Toolbar and panel position</div>
             <div className="hint">
-              {settings.toolbarPosition
-                ? `Remembered at ${Math.round(settings.toolbarPosition.x)}, ${Math.round(settings.toolbarPosition.y)}.`
+              {settings.toolbarPosition || settings.panelGeometry
+                ? 'Both are remembered where you last left them.'
                 : 'Not set yet.'}
             </div>
           </div>
-          <button type="button" onClick={() => update('toolbarPosition', null)} disabled={!settings.toolbarPosition}>
+          <button
+            type="button"
+            onClick={() => {
+              update('toolbarPosition', null);
+              update('panelGeometry', null);
+            }}
+            disabled={!settings.toolbarPosition && !settings.panelGeometry}
+          >
             Reset
           </button>
         </div>

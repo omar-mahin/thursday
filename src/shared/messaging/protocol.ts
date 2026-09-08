@@ -259,15 +259,18 @@ export type ThursdayMessageType = ThursdayMessage['type'];
 /**
  * The buttons on the page toolbar.
  *
- * Deliberately short. Two actions used to be here and are not:
+ * Four, and deliberately short. Three actions used to be here:
  *
- *  - 'report', which was greyed out and unwireable -- the panel already has
- *    Save report and Save PDF, so a third control was a place to look rather
- *    than a thing to do.
- *  - 'settings', which opened the settings page. Settings is not something
- *    anyone reaches for mid-audit, and the popup already has it.
+ *  - 'report' was greyed out and unwireable -- the panel already has Save
+ *    report and Save PDF, so a third control was a place to look rather than a
+ *    thing to do.
+ *  - 'settings' opened the settings page, which nobody reaches for mid-audit
+ *    and the popup already offers.
+ *  - 'inspect' switched the panel to an Element tab. Once Select grew into a
+ *    ruler that reads an element on hover, that tab was a second home for what
+ *    the page already showed, and the button existed to reach it.
  */
-export type ToolbarAction = 'audit' | 'select' | 'comment' | 'inspect' | 'close';
+export type ToolbarAction = 'audit' | 'select' | 'comment' | 'close';
 
 /** Who is on the other end of a long-lived port. */
 export type PortName = 'sidepanel' | 'content';

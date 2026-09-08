@@ -11,7 +11,7 @@ async function auditFrom(
   const page = await openFixture(fixture);
   await activate(page);
   const panel = await page.context().newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
   /*
@@ -65,7 +65,7 @@ test('pins do not touch the page layout', async ({ openFixture, activate, extens
 
   await activate(page);
   const panel = await page.context().newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await page.bringToFront();
   await expect(pins(page).first()).toBeVisible();

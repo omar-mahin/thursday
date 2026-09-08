@@ -1,4 +1,4 @@
-import { expect, exchange, testWithHostAccess as test } from './fixtures';
+import { exchange, expect, openMore, panelOf, panelReady, testWithHostAccess as test, withoutPicker } from './fixtures';
 import type { PageSnapshot } from '../../src/shared/types';
 
 /**
@@ -13,13 +13,14 @@ import type { PageSnapshot } from '../../src/shared/types';
 test('frames are counted, and the ones that loaded nothing are not', async ({
   openFixture,
   activate,
-  extensionId,
   context,
+  extensionId,
 }) => {
+  await withoutPicker(context);
   const page = await openFixture('frames.html');
   await activate(page);
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
 
   const snapshot = await exchange<{ payload: PageSnapshot }>(
     panel,
@@ -36,13 +37,14 @@ test('frames are counted, and the ones that loaded nothing are not', async ({
 test('the panel says what it could not look inside', async ({
   openFixture,
   activate,
-  extensionId,
   context,
+  extensionId,
 }) => {
+  await withoutPicker(context);
   const page = await openFixture('frames.html');
   await activate(page);
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
@@ -54,21 +56,20 @@ test('the panel says what it could not look inside', async ({
 test('the report repeats the limit rather than implying full coverage', async ({
   openFixture,
   activate,
-  extensionId,
   context,
 }) => {
+  await withoutPicker(context);
   const page = await openFixture('frames.html');
   await activate(page);
-  const panel = await context.newPage();
-  await panel.addInitScript(() => {
-    Reflect.deleteProperty(window, 'showSaveFilePicker');
-  });
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panelReady(page);
+  const panel = panelOf(page);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
 
+  // Save lives behind the panel's disclosure now.
+  await openMore(page);
   const download = await Promise.all([
-    panel.waitForEvent('download'),
+    page.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save report' }).click(),
   ]).then(([event]) => event);
 
@@ -84,10 +85,11 @@ test('a page with no frames says nothing about frames', async ({
   context,
 }) => {
   // A caveat that appears on every page stops being read.
+  await withoutPicker(context);
   const page = await openFixture('accessibility.html');
   await activate(page);
   const panel = await context.newPage();
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
 
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();

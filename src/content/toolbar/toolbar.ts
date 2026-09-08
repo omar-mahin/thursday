@@ -43,7 +43,6 @@ const BUTTONS: ButtonSpec[] = [
   { action: 'audit', label: 'Audit', enabled: false },
   { action: 'select', label: 'Select', enabled: false, toggle: true },
   { action: 'comment', label: 'Comment', enabled: false, toggle: true },
-  { action: 'inspect', label: 'Inspect', enabled: false },
 ];
 
 /** Utilities, always available, kept behind a separator. */

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { expect, testWithHostAccess as test } from './fixtures';
-import type { BrowserContext, Page } from '@playwright/test';
+import { expect, openMore, panelOf, panelReady, testWithHostAccess as test, withoutPicker } from './fixtures';
+import type { BrowserContext, FrameLocator, Page } from '@playwright/test';
 
 /**
  * The PDF export, checked against a real PDF reader.
@@ -19,16 +19,6 @@ import type { BrowserContext, Page } from '@playwright/test';
 
 const IMAGE = resolve('tests/fixtures/annotation-image.png');
 
-const openPanel = async (context: BrowserContext, extensionId: string): Promise<Page> => {
-  const panel = await context.newPage();
-  // The native save dialog cannot be driven; the anchor fallback writes the
-  // same bytes. See files.spec.ts.
-  await panel.addInitScript(() => {
-    Reflect.deleteProperty(window, 'showSaveFilePicker');
-  });
-  await panel.goto(`chrome-extension://${extensionId}/sidepanel.html`);
-  return panel;
-};
 
 /**
  * How much of a screenshot is a printed page with text on it.
@@ -86,7 +76,7 @@ async function inkOnPage(context: BrowserContext, shot: Buffer): Promise<{ sheet
  */
 async function comment(
   page: Page,
-  panel: Page,
+  panel: FrameLocator,
   text: string,
   files?: string,
   priority?: 'medium' | 'high',
@@ -94,8 +84,7 @@ async function comment(
   await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
     timeout: 60_000,
   });
-  await panel.getByRole('button', { name: 'Comment on the page' }).dispatchEvent('click');
-  await page.bringToFront();
+  await panel.getByRole('button', { name: 'Comment on the page' }).click();
   const card = page.locator('thursday-root .cm-card');
   await expect(card).toBeVisible();
   if (priority) await page.locator(`thursday-root .cm-priority[data-level="${priority}"]`).click();
@@ -103,24 +92,26 @@ async function comment(
   if (files) await page.locator('thursday-root input[type="file"]').setInputFiles(files);
   await page.locator('thursday-root .cm-add').click();
   await expect(card).toBeHidden({ timeout: 15_000 });
-  await panel.bringToFront();
 }
 
 test('the PDF export is a file a real reader renders', async ({
   openFixture,
   activate,
-  extensionId,
   context,
 }) => {
+  await withoutPicker(context);
   const page = await openFixture('accessibility.html');
   await activate(page);
 
-  const panel = await openPanel(context, extensionId);
+  await panelReady(page);
+  const panel = panelOf(page);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
 
+  // Save lives behind the panel's disclosure now.
+  await openMore(page);
   const download = await Promise.all([
-    panel.waitForEvent('download'),
+    page.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save PDF' }).click(),
   ]).then(([event]) => event);
 
@@ -161,13 +152,14 @@ test('the PDF export is a file a real reader renders', async ({
 test('the PDF carries the findings, the notes and the comments', async ({
   openFixture,
   activate,
-  extensionId,
   context,
 }) => {
+  await withoutPicker(context);
   const page = await openFixture('accessibility.html');
   await activate(page);
 
-  const panel = await openPanel(context, extensionId);
+  await panelReady(page);
+  const panel = panelOf(page);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
 
@@ -177,8 +169,10 @@ test('the PDF carries the findings, the notes and the comments', async ({
   await comment(page, panel, 'The form asks for the same thing twice.', IMAGE, 'high');
   await expect(panel.locator('.attach-grid img')).toHaveCount(1);
 
+  // Save lives behind the panel's disclosure now.
+  await openMore(page);
   const download = await Promise.all([
-    panel.waitForEvent('download'),
+    page.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save PDF' }).click(),
   ]).then(([event]) => event);
   const bytes = readFileSync(await download.path()).toString('latin1');
@@ -208,13 +202,14 @@ test('the PDF carries the findings, the notes and the comments', async ({
 test('the PDF names the characters it could not draw instead of mangling them', async ({
   openFixture,
   activate,
-  extensionId,
   context,
 }) => {
+  await withoutPicker(context);
   const page = await openFixture('accessibility.html');
   await activate(page);
 
-  const panel = await openPanel(context, extensionId);
+  await panelReady(page);
+  const panel = panelOf(page);
   await panel.getByRole('button', { name: 'Full audit' }).click();
   await expect(panel.locator('.finding-row').first()).toBeVisible();
 
@@ -222,8 +217,10 @@ test('the PDF names the characters it could not draw instead of mangling them', 
   await comment(page, panel, '価格表が読めない');
   await expect(panel.locator('.comment-row')).toHaveCount(1);
 
+  // Save lives behind the panel's disclosure now.
+  await openMore(page);
   const download = await Promise.all([
-    panel.waitForEvent('download'),
+    page.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save PDF' }).click(),
   ]).then(([event]) => event);
   const bytes = readFileSync(await download.path()).toString('latin1');

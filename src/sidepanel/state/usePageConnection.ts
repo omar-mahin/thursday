@@ -63,8 +63,6 @@ export type PageState = {
   commentsChanged: number;
 };
 
-export type LogEntry = { at: number; direction: 'in' | 'out'; type: ThursdayMessage['type'] };
-
 /** Reconnect tries before the panel admits the worker is not coming back. */
 const RECONNECT_ATTEMPTS = 4;
 const RECONNECT_DELAY_MS = 250;
@@ -116,7 +114,6 @@ const INITIAL: PageState = {
   commentsChanged: 0,
 };
 
-const LOG_LIMIT = 40;
 
 /**
  * The side panel owns audit state (the service worker cannot: MV3 kills it).
@@ -124,18 +121,23 @@ const LOG_LIMIT = 40;
  */
 export function usePageConnection(): {
   page: PageState;
-  log: LogEntry[];
   send(message: ThursdayMessage): void;
 } {
   const [page, setPage] = useState<PageState>(INITIAL);
-  const [log, setLog] = useState<LogEntry[]>([]);
   const portRef = useRef<TypedPort | null>(null);
   /** Messages waiting for a port. See OUTBOX_LIMIT. */
   const outbox = useRef<{ at: number; message: ThursdayMessage }[]>([]);
 
-  const record = useCallback((direction: 'in' | 'out', type: ThursdayMessage['type']) => {
-    setLog((entries) => [{ at: Date.now(), direction, type }, ...entries].slice(0, LOG_LIMIT));
-  }, []);
+  /*
+   * The message tap, kept as a no-op hook point rather than as a log.
+   *
+   * There used to be a running list of every message, rendered in the panel
+   * behind a flag. It was a development aid with no user, and it held every
+   * message type this session had seen in state for no purpose. What is worth
+   * keeping is the single place every message passes through, so the next
+   * person debugging the protocol has one line to add a console call to.
+   */
+  const record = useCallback((_direction: 'in' | 'out', _type: ThursdayMessage['type']) => {}, []);
 
   /*
    * The port, reconnected when it drops.
@@ -381,5 +383,5 @@ export function usePageConnection(): {
     [record],
   );
 
-  return { page, log, send };
+  return { page, send };
 }
