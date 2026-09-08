@@ -35,7 +35,20 @@ export type PanelFrameOptions = {
   src: string;
   onMoved(geometry: PanelGeometry): void;
   onClose(): void;
+  /** The frame could not load the panel; offer it somewhere that can. */
+  onOpenElsewhere(): void;
 };
+
+/**
+ * How long the frame waits for the panel to report in.
+ *
+ * Generous from cold, because the panel has to boot React and open a database
+ * before it can say anything, and a false alarm reads worse than a slow start.
+ * Shorter once something has actually loaded: at that point the page is there
+ * and either it is ours or it is not.
+ */
+const READY_TIMEOUT_MS = 6000;
+const LOADED_GRACE_MS = 2500;
 
 const MIN_WIDTH = 300;
 const MIN_HEIGHT = 260;
@@ -82,12 +95,77 @@ export function createPanelFrame(layer: HTMLElement, options: PanelFrameOptions)
   // what keeps the page out of it.
   frame.src = options.src;
 
+  /*
+   * Shown when the framed panel never reports in.
+   *
+   * Without it a failure to load is one of Chrome's grey error screens inside
+   * Thursday's own window: no explanation, no way out, and nothing that says
+   * which half is broken. This says what happened and offers the panel in a
+   * tab, which does not depend on being frameable at all.
+   */
+  const trouble = document.createElement('div');
+  trouble.className = 'pf-trouble';
+  trouble.hidden = true;
+  const troubleText = document.createElement('p');
+  troubleText.textContent = 'The panel could not load inside this page.';
+  const troubleOut = document.createElement('button');
+  troubleOut.type = 'button';
+  troubleOut.className = 'pf-out';
+  troubleOut.textContent = 'Open the panel in a tab';
+  troubleOut.addEventListener('click', () => options.onOpenElsewhere());
+  trouble.append(troubleText, troubleOut);
+
   const handle = document.createElement('span');
   handle.className = 'pf-resize';
   handle.setAttribute('aria-hidden', 'true');
 
-  root.append(bar, frame, handle);
+  root.append(bar, frame, trouble, handle);
   layer.append(root);
+
+  /*
+   * The panel says hello when it has rendered; if it does not, something ate
+   * the frame. Generous, because a cold start has to boot React and open a
+   * database, and a false alarm here would be worse than a slow panel.
+   */
+  let ready = false;
+  let watchdog = 0;
+
+  const giveUp = (): void => {
+    if (ready) return;
+    frame.hidden = true;
+    trouble.hidden = false;
+  };
+
+  /**
+   * Waits for the panel to say hello, and gives up out loud if it does not.
+   *
+   * Armed twice, for two different failures. Once up front, because the frame
+   * may never load anything at all. And again on every `load` the iframe
+   * reports, because Chrome fires that for its own error pages too -- so
+   * "something loaded" is not "the panel loaded", and a frame that swaps to a
+   * blocked URL later has to be caught the same way.
+   */
+  const arm = (delay: number): void => {
+    clearTimeout(watchdog);
+    watchdog = window.setTimeout(giveUp, delay);
+  };
+
+  const onMessage = (event: MessageEvent): void => {
+    const data = event.data as { thursday?: unknown } | null;
+    if (data && typeof data === 'object' && data.thursday === 'panel-ready') {
+      ready = true;
+      clearTimeout(watchdog);
+      trouble.hidden = true;
+      frame.hidden = false;
+    }
+  };
+  window.addEventListener('message', onMessage);
+  frame.addEventListener('load', () => {
+    // A load with no hello behind it is somebody else's page in our window.
+    ready = false;
+    arm(LOADED_GRACE_MS);
+  });
+  arm(READY_TIMEOUT_MS);
 
   let geometry: PanelGeometry = { x: 0, y: 0, width: 380, height: 560, collapsed: false };
 
@@ -197,6 +275,8 @@ export function createPanelFrame(layer: HTMLElement, options: PanelFrameOptions)
     isCollapsed: () => geometry.collapsed,
     destroy() {
       window.removeEventListener('resize', onResize);
+      window.removeEventListener('message', onMessage);
+      clearTimeout(watchdog);
       root.remove();
     },
   };

@@ -30,7 +30,7 @@ describe('manifest', () => {
     expect(record['externally_connectable']).toBeUndefined();
   });
 
-  it('exposes exactly one resource to web pages, on a rotating URL', () => {
+  it('exposes exactly one resource to web pages', () => {
     /*
      * The panel is an extension document -- it needs the extension origin to
      * reach IndexedDB at all -- so floating it over the page means framing it,
@@ -38,13 +38,16 @@ describe('manifest', () => {
      * web-accessible. This is the one deliberate widening in the manifest.
      *
      * Asserted field by field rather than as "something is declared", because
-     * the whole value is in the narrowness: one file, and `use_dynamic_url` so
-     * the address is unguessable and rotates instead of being hard-codeable by
-     * a site. The frame is also cross-origin to its host page, so a hostile
-     * page can embed it and read nothing out of it.
+     * the whole value is in the narrowness: one file, and nothing else.
+     *
+     * No `use_dynamic_url`, and that is deliberate rather than forgotten. It
+     * was set, and it broke the panel in a real browser: getURL() returns the
+     * static path, which a dynamic URL makes unloadable from a page, so the
+     * frame showed Chrome's "blocked" screen. The frame is cross-origin to its
+     * host page either way, so a site can embed it and read nothing out of it.
      */
     expect(record['web_accessible_resources']).toEqual([
-      { resources: ['panel.html'], matches: ['<all_urls>'], use_dynamic_url: true },
+      { resources: ['panel.html'], matches: ['<all_urls>'] },
     ]);
   });
 

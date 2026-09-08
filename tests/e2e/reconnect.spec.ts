@@ -155,7 +155,16 @@ test('a comment written after the worker is collected still lands', async ({
   // Closes only when the panel has stored it and said so.
   await expect(card).toBeHidden({ timeout: 20_000 });
   await panel.bringToFront();
-  await expect(panel.locator('.comment-body')).toHaveText('Written after the worker died.');
+  /*
+   * Generous, because the claim is that it lands rather than that it lands
+   * quickly. Getting here can involve a port reconnect, the worker storing the
+   * note itself, a panel reconnect and then the note being carried into the
+   * open audit -- and under a full-suite load that chain took longer than the
+   * default five seconds often enough to fail about one run in three.
+   */
+  await expect(panel.locator('.comment-body')).toHaveText('Written after the worker died.', {
+    timeout: 25_000,
+  });
   // Once, not twice. The page resends until it is acknowledged, so this is the
   // assertion that the resending cannot produce a second comment.
   await expect(panel.locator('.comment-row')).toHaveCount(1);

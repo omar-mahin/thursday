@@ -304,6 +304,13 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'ERROR':
       toPanels(message, tabId);
       return;
+    case 'OPEN_PANEL_TAB':
+      // The frame could not show the panel, so give it a tab. Nothing else
+      // in the extension can navigate on the page's behalf.
+      void chrome.tabs.create({ url: chrome.runtime.getURL('panel.html') }).catch(() => {
+        toPanels({ type: 'ERROR', payload: { code: 'UNKNOWN', detail: 'Could not open the panel.' } }, tabId);
+      });
+      return;
     case 'ANNOTATION_SUBMITTED':
       /*
        * The one thing the worker stores rather than forwards, and only when
@@ -401,6 +408,7 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'ANNOTATION_SUBMITTED':
     case 'BAND_READY':
     case 'COMMENTS_CHANGED':
+    case 'OPEN_PANEL_TAB':
     case 'TOOLBAR_ACTION':
     case 'ERROR':
       return;

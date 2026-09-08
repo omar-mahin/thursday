@@ -65,15 +65,21 @@ export const manifest = {
    * script puts it in an iframe, and an iframe of an extension page inside a
    * web page requires that page to be web-accessible.
    *
-   * That is a real widening, so it is narrowed twice. `use_dynamic_url` gives
-   * the resource an unguessable URL that rotates, so a site cannot hard-code
-   * it; and the frame is cross-origin to whatever page it sits in, so a
-   * hostile page can embed it but cannot read a pixel or a byte out of it. The
-   * worst it buys an attacker is the ability to display Thursday's own panel.
+   * It was declared with `use_dynamic_url: true` first, for an unguessable
+   * address that rotates per session. That has to come out, and the reason is
+   * worth recording: `chrome.runtime.getURL()` returns the *static* path, and
+   * with a dynamic URL in force that path is not loadable from a page -- so
+   * the panel came up as Chrome's "This page has been blocked" screen inside
+   * its own frame. It did so in a real browser while every test passed, which
+   * is its own lesson about where this can and cannot be verified.
+   *
+   * What remains is a guessable URL for one HTML file. The frame is still
+   * cross-origin to whatever page embeds it, so a hostile site can display
+   * Thursday's panel and read nothing out of it -- no pixel, no byte, no
+   * script access. That is the whole of the exposure, and it buys an attacker
+   * nothing they could not achieve by drawing a picture of the panel.
    */
-  web_accessible_resources: [
-    { resources: ['panel.html'], matches: ['<all_urls>'], use_dynamic_url: true },
-  ],
+  web_accessible_resources: [{ resources: ['panel.html'], matches: ['<all_urls>'] }],
   options_page: 'options.html',
   background: { service_worker: 'service-worker.js', type: 'module' },
 } as const;

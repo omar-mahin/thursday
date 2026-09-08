@@ -290,6 +290,7 @@ function install(): void {
       case 'BAND_READY':
       case 'ANNOTATION_SUBMITTED':
       case 'COMMENTS_CHANGED':
+      case 'OPEN_PANEL_TAB':
       case 'TOOLBAR_ACTION':
       case 'ERROR':
         return;
@@ -857,6 +858,14 @@ function install(): void {
         // the comment card all work without it, and the toolbar's Inspect
         // button brings it back.
         onClose: () => panel?.collapse(true),
+        /*
+         * A way out when the frame cannot show the panel.
+         *
+         * Opened through the worker rather than with window.open: a content
+         * script's window.open is the page's, and the page cannot navigate to
+         * an extension URL. The worker can.
+         */
+        onOpenElsewhere: () => post({ type: 'OPEN_PANEL_TAB' }),
       });
       panel.place(saved);
     });

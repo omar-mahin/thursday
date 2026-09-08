@@ -675,14 +675,46 @@ export const PANEL_CSS = `
   display: block;
   background: var(--thu-bg);
 }
+/* A class rule beats the user agent's [hidden], so hiding it needs saying
+   here -- setting the attribute alone left the frame on screen. */
+.pf-frame[hidden] { display: none; }
 /* Collapsed to just its bar. The frame is removed from the layout rather than
    hidden, so a collapsed panel cannot keep a scrollbar or a focus target. */
 .pf-root[data-collapsed="true"] .pf-frame,
-.pf-root[data-collapsed="true"] .pf-resize { display: none; }
+.pf-root[data-collapsed="true"] .pf-resize,
+.pf-root[data-collapsed="true"] .pf-trouble { display: none; }
 /* While dragging, the iframe must not eat the pointer -- an iframe swallows
    events, and a resize that stops the moment the pointer crosses into the
    thing being resized is not a resize. */
 .pf-root[data-dragging="true"] .pf-frame { pointer-events: none; }
+
+/* Shown only when the framed panel never reported in. */
+.pf-trouble {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  padding: 20px;
+  text-align: center;
+  color: var(--thu-fg);
+  font-size: 13px;
+  line-height: 1.5;
+}
+.pf-trouble[hidden] { display: none; }
+.pf-trouble p { margin: 0; }
+.pf-out {
+  min-height: 32px;
+  padding: 0 14px;
+  border: 0;
+  border-radius: 8px;
+  background: var(--thu-accent);
+  color: #fff;
+  font: inherit;
+  font-weight: 600;
+  cursor: pointer;
+}
 
 .pf-resize {
   position: absolute;

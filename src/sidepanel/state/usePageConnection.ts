@@ -313,6 +313,7 @@ export function usePageConnection(): {
         case 'FOCUS_ELEMENT':
         case 'CAPTURE_BAND':
         case 'ANNOTATION_SAVED':
+        case 'OPEN_PANEL_TAB':
         case 'REQUEST_ELEMENT_RECT':
         case 'START_ANNOTATION':
         case 'CANCEL_ANNOTATION':
