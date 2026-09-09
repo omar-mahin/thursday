@@ -2,7 +2,12 @@ import { assertNever, type ErrorCode } from '../shared/result';
 import type { AnnotationSubmission, Envelope, ThursdayMessage } from '../shared/messaging/protocol';
 import { isEnvelope } from '../shared/messaging/protocol';
 import { checkUrl } from '../shared/utils/url';
-import { annotationFromSubmission, notesBucketId, saveAnnotation } from '../storage/annotations';
+import {
+  announceComments,
+  annotationFromSubmission,
+  notesBucketId,
+  saveAnnotation,
+} from '../storage/annotations';
 import { ACTIVATE_COMMAND } from '../shared/constants/product';
 
 /**
@@ -28,19 +33,6 @@ const contentPorts = new Map<number, chrome.runtime.Port>();
  * Those hear everything, because there is nothing better to tell them.
  */
 const panelPorts = new Map<chrome.runtime.Port, number | undefined>();
-
-/**
- * Tabs where a comment was stored while no panel was listening.
- *
- * The worker tells panels when it stores one, but the panel it needs to tell is
- * often the one that has not reconnected yet -- that is why the worker had to
- * store it in the first place. So the notice is held until a panel for that tab
- * turns up, rather than broadcast into an empty room.
- *
- * Lost when the worker is collected, which is fine: it only has to survive the
- * couple of seconds between storing a note and a panel reconnecting.
- */
-const pendingNotes = new Set<number>();
 
 /** The tab the user most recently activated. See targetTab(). */
 let lastActivatedTabId: number | undefined;
@@ -69,8 +61,20 @@ async function targetTab(): Promise<number | undefined> {
   return undefined;
 }
 
-function toPanels(message: ThursdayMessage, tabId?: number): void {
+/**
+ * Sends to every panel that should hear this, and says how many that was.
+ *
+ * The count is the point of the return value: `panelPorts.size` is not the same
+ * question as "will this reach anybody", because of the filter below. A caller
+ * that asks the first and acts on the second can forward an
+ * `ANNOTATION_SUBMITTED` into nothing -- every connected panel belongs to some
+ * other tab -- leaving the comment unstored and the page waiting on an
+ * acknowledgement that will never come. So callers that must not drop a message
+ * branch on what was actually delivered rather than on who exists.
+ */
+function toPanels(message: ThursdayMessage, tabId?: number): number {
   const envelope: Envelope = tabId === undefined ? { from: 'content', message } : { from: 'content', tabId, message };
+  let delivered = 0;
   for (const [port, home] of panelPorts) {
     /*
      * A panel that belongs to an audited page hears only that page.
@@ -89,10 +93,12 @@ function toPanels(message: ThursdayMessage, tabId?: number): void {
     if (ownsAPage && tabId !== undefined && home !== tabId) continue;
     try {
       port.postMessage(envelope);
+      delivered += 1;
     } catch {
       panelPorts.delete(port);
     }
   }
+  return delivered;
 }
 
 function toContent(tabId: number, message: ThursdayMessage): boolean {
@@ -217,14 +223,17 @@ chrome.runtime.onConnect.addListener((port) => {
     const home = port.sender?.tab?.id;
     panelPorts.set(port, home);
     port.onDisconnect.addListener(() => panelPorts.delete(port));
-    // A comment stored while nothing was listening: tell this panel to look.
-    if (home !== undefined && pendingNotes.delete(home)) {
-      try {
-        port.postMessage({ from: 'content', tabId: home, message: { type: 'COMMENTS_CHANGED' } });
-      } catch {
-        pendingNotes.add(home);
-      }
-    }
+    /*
+     * Nothing to hand this panel on the way in.
+     *
+     * There used to be a queue of "a comment was stored for tab N while nobody
+     * was listening", drained by the first panel from tab N to reconnect. With
+     * a panel mounted on every activated page that was usually the framed one,
+     * which had no audit open and so could do nothing with the notice -- it
+     * took it and dropped it, and the panel that could have acted was never
+     * told. The announcement is in chrome.storage now, where it is state rather
+     * than an event and every panel sees it whenever it arrives.
+     */
     port.onMessage.addListener((raw: unknown) => {
       if (!isEnvelope(raw)) return;
       void routeFromPanel(raw.message);
@@ -271,12 +280,24 @@ async function storeWithoutPanel(tabId: number, submission: AnnotationSubmission
     }
     const { annotation, blobs } = annotationFromSubmission(submission, notesBucketId(origin));
     await saveAnnotation(annotation, blobs);
-    reply({ type: 'ANNOTATION_SAVED', payload: { ok: true } });
-    // Any panel that has appeared in the meantime is told to look, because it
-    // may have already checked and found nothing. If none has, the notice
-    // waits for one -- see pendingNotes.
-    pendingNotes.add(tabId);
+    /*
+     * Announced before the page is answered, and that order matters.
+     *
+     * The other way round -- reply, then announce -- is how this was written,
+     * and it loses the announcement whenever the worker is torn down in
+     * between. Measured, repeatedly: the comment on disk, the card closed, and
+     * the storage key never set, so no panel had any reason to look. Answering
+     * last means the page is still waiting, and the page retries until it is
+     * answered; a retry is now the same row rather than a second comment, so
+     * the cost of dying here is a duplicate store and nothing else.
+     *
+     * Both channels, because they fail differently: the port message reaches a
+     * panel listening right now, the storage write reaches one that is not,
+     * including a panel opened minutes later.
+     */
+    await announceComments();
     toPanels({ type: 'COMMENTS_CHANGED' }, tabId);
+    reply({ type: 'ANNOTATION_SAVED', payload: { ok: true } });
   } catch {
     reply({
       type: 'ANNOTATION_SAVED',
@@ -327,8 +348,10 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
        * the origin's own bucket and the next audit adopts it -- the same place
        * a note written before any audit goes.
        */
-      if (panelPorts.size > 0) toPanels(message, tabId);
-      else void storeWithoutPanel(tabId, message.payload);
+      // Branching on what was delivered rather than on how many panels exist:
+      // a panel connected for a different tab is filtered out by `toPanels`,
+      // and counting it as a listener dropped the comment entirely.
+      if (toPanels(message, tabId) === 0) void storeWithoutPanel(tabId, message.payload);
       return;
     // Panel-bound or worker-bound message types never originate in the page.
     case 'ACTIVATE_PAGE':

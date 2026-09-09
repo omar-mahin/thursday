@@ -270,8 +270,9 @@ function commentSection(
     const badgeWidth = layout.badge(marker, COMMENT_COLOR, 8.5);
     const anchor = where(annotation) ?? 'On the page as a whole (no element anchor).';
     layout.text(anchor, { font: 'mono', size: 8, color: DIM, indent: badgeWidth + 7, after: 3 });
+    const status = annotation.status ?? 'open';
     /*
-     * Who and how urgent, on one line, before the words.
+     * Who, how urgent, and where it got to, on one line, before the words.
      *
      * Only when there is something to say: a comment with no author and no
      * priority gets no line at all, rather than one reading "Normal" that the
@@ -284,6 +285,14 @@ function commentSection(
       annotation.priority && annotation.priority !== 'normal'
         ? `${PRIORITY_LABELS[annotation.priority]} priority`
         : null,
+      /*
+       * Where it got to, when it got anywhere.
+       *
+       * A comment the author already resolved, printed identically to one
+       * still outstanding, makes the document overstate the work left. `open`
+       * is the absence of triage and says nothing worth a word here.
+       */
+      status === 'open' ? null : status.toUpperCase(),
     ].filter((part): part is string => typeof part === 'string' && part.trim() !== '');
     if (attribution.length > 0) {
       layout.text(attribution.join('  ·  '), {

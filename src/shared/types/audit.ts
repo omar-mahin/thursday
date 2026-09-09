@@ -313,6 +313,20 @@ export type Annotation = {
    * unless they export a file and send it.
    */
   author?: string;
+  /**
+   * Where this has got to, on the same ladder a finding uses.
+   *
+   * A comment is a thing somebody has to do something about, so it belongs in
+   * the same list as the findings and needs the same four answers: still open,
+   * agreed, done, or not a problem. Sharing `FindingStatus` rather than
+   * inventing a parallel vocabulary is the point -- it is what lets "what is
+   * left to fix" be one number instead of two.
+   *
+   * Optional because a comment from a file written before this existed has no
+   * answer, and writing `open` into it here would claim the user had triaged
+   * it. Readers default it; they do not backfill it.
+   */
+  status?: FindingStatus;
   /** Attachment metadata, in the order the user added them. */
   attachments: AnnotationAttachment[];
   createdAt: number;

@@ -130,14 +130,32 @@ const notices = (input: ReportInput): string =>
  * the two into one list -- which would be easier to build and read slightly
  * better -- would let an opinion inherit the authority of the numbers above
  * it, and that is the trade this whole product refuses to make.
+ *
+ * The panel does merge them, and that is not a contradiction: the panel is a
+ * worklist for the person who wrote the comments, where what matters is one
+ * count of what is left. This is a document handed to somebody who was not
+ * there, where what matters is which claims came with a measurement behind
+ * them. Same items, different question.
  */
+/**
+ * Whether a comment has been put away.
+ *
+ * The same two statuses that close a finding, because they are the same
+ * statuses -- and absent means untriaged, which is open.
+ */
+const isClosedComment = (annotation: Annotation): boolean =>
+  annotation.status === 'resolved' || annotation.status === 'dismissed';
+
 function renderComments(annotations: readonly Annotation[], input: ReportInput): string {
   if (annotations.length === 0) return '';
+  const open = annotations.filter((annotation) => !isClosedComment(annotation)).length;
   return `<section class="comments">
 <h2>Comments — ${annotations.length}</h2>
 <p class="dim">Written by hand during the audit. These are observations and opinions, not measurements, and ${escapeHtml(
     PRODUCT_NAME,
-  )} makes no claim about them.</p>
+  )} makes no claim about them.${
+    open === annotations.length ? '' : ` ${open} of ${annotations.length} still open.`
+  }</p>
 ${annotations.map((annotation, index) => renderComment(annotation, index + 1, input)).join('\n')}
 </section>`;
 }
@@ -159,7 +177,8 @@ function renderComment(annotation: Annotation, ordinal: number, input: ReportInp
     })
     .join('\n  ');
 
-  return `<article class="finding comment">
+  const status = annotation.status ?? 'open';
+  return `<article class="finding comment" data-status="${escapeHtml(status)}">
   <div class="finding-head">
     <span class="sev" data-kind="comment">${escapeHtml(marker)}</span>
     <h3>Comment ${escapeHtml(marker)}</h3>
@@ -171,6 +190,14 @@ function renderComment(annotation: Annotation, ordinal: number, input: ReportInp
         : ''
     }
   </div>
+  ${
+    /*
+     * Said out loud when it is not open, exactly as a finding says it.
+     * A comment the author has already resolved, printed identically to one
+     * still outstanding, is a report that overstates the work remaining.
+     */
+    status === 'open' ? '' : `<ul class="tags"><li>${escapeHtml(status)}</li></ul>`
+  }
   ${annotation.author ? `<p class="byline">${escapeHtml(annotation.author)}</p>` : ''}
   <p class="body">${paragraphs(annotation.body)}</p>
   ${images}

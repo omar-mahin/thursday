@@ -1,11 +1,15 @@
 import { beforeEach, describe, expect, it } from 'vitest';
-import type { Finding } from '../../src/shared/types';
+import type { Annotation, Finding } from '../../src/shared/types';
 import {
+  annotationStatus,
+  closedAnnotations,
   countByStatus,
   EMPTY_STATE,
   filterViews,
   groupByRule,
   isClosed,
+  issueRows,
+  openIssueCount,
   ordinals,
   pinsFor,
   reduce,
@@ -303,5 +307,122 @@ describe('selection', () => {
     const target = state.views[1]!.finding.id;
     state = reduce(state, { type: 'select', id: target });
     expect(state.selectedId).toBe(target);
+  });
+});
+
+/**
+ * The one list.
+ *
+ * Findings and the user's comments share it. What these check is the part that
+ * could quietly go wrong: that a comment sorts where its priority says without
+ * ever being given a severity, that closing one takes it out of the list the
+ * same way closing a finding does, and that "what is left" is a single number
+ * over both.
+ */
+let commentCounter = 0;
+const comment = (overrides: Partial<Annotation> = {}): Annotation => {
+  commentCounter += 1;
+  return {
+    id: `c${commentCounter}`,
+    auditId: 'a1',
+    body: `Comment ${commentCounter}`,
+    attachments: [],
+    createdAt: commentCounter,
+    updatedAt: commentCounter,
+    ...overrides,
+  };
+};
+
+describe('the merged issues list', () => {
+  /*
+   * Every rung, against the whole ladder.
+   *
+   * One case per priority against a partial ladder was not enough: a mapping
+   * that was wrong by one rung still produced the expected order, because the
+   * neighbouring severity was missing from the fixture. Findings at all five
+   * severities pin each priority to exactly one gap.
+   */
+  it.each([
+    { priority: 'high' as const, after: 'R-HIGH', before: 'R-MED' },
+    { priority: 'medium' as const, after: 'R-MED', before: 'R-LOW' },
+    { priority: undefined, after: 'R-LOW', before: 'R-INFO' },
+  ])('sorts a $priority-priority comment between $after and $before', ({ priority, after, before }) => {
+    const state = load([
+      finding({ severity: 'critical', ruleId: 'R-CRIT' }),
+      finding({ severity: 'high', ruleId: 'R-HIGH' }),
+      finding({ severity: 'medium', ruleId: 'R-MED' }),
+      finding({ severity: 'low', ruleId: 'R-LOW' }),
+      finding({ severity: 'info', ruleId: 'R-INFO' }),
+    ]);
+    const rows = issueRows(state.views, [comment(priority ? { priority } : {})], false);
+    const order = rows.map((row) => (row.kind === 'comment' ? 'comment' : row.group.ruleId));
+
+    expect(order[order.indexOf('comment') - 1]).toBe(after);
+    expect(order[order.indexOf('comment') + 1]).toBe(before);
+  });
+
+  it('puts a measured finding before a comment it merely ties with', () => {
+    const state = load([finding({ severity: 'high', ruleId: 'R-HIGH' })]);
+    const rows = issueRows(state.views, [comment({ priority: 'high' })], false);
+    expect(rows[0]?.kind).toBe('findings');
+    expect(rows[1]?.kind).toBe('comment');
+  });
+
+  it('never gives a comment a severity', () => {
+    const rows = issueRows([], [comment({ priority: 'high' })], false);
+    const row = rows[0];
+    // The row carries a sort rank and nothing a renderer could mistake for a
+    // measurement: no `severity` field to reach for.
+    expect(row).not.toHaveProperty('severity');
+    expect(row?.kind).toBe('comment');
+  });
+
+  it('hides a resolved or dismissed comment until asked for it', () => {
+    const annotations = [
+      comment({ status: 'resolved' }),
+      comment({ status: 'dismissed' }),
+      comment({ status: 'accepted' }),
+      comment(),
+    ];
+    expect(issueRows([], annotations, false)).toHaveLength(2);
+    expect(issueRows([], annotations, true)).toHaveLength(4);
+    expect(closedAnnotations(annotations)).toBe(2);
+  });
+
+  it('keeps a comment marker on its own position when one above it is hidden', () => {
+    // The letter is the comment's place in the whole series. If hiding a
+    // resolved comment renumbered the rest, the B on a pin and the B in the
+    // report would stop being the same comment.
+    const annotations = [comment({ status: 'resolved' }), comment(), comment()];
+    const rows = issueRows([], annotations, false);
+    expect(rows.map((row) => (row.kind === 'comment' ? row.index : -1))).toEqual([1, 2]);
+  });
+
+  it('defaults a comment with no status to open without writing one', () => {
+    const bare = comment();
+    expect(annotationStatus(bare)).toBe('open');
+    expect(bare.status).toBeUndefined();
+  });
+
+  it('counts what is left over both kinds at once', () => {
+    const state = load([
+      finding({ status: 'open' }),
+      finding({ status: 'accepted' }),
+      finding({ status: 'resolved' }),
+      finding({ status: 'dismissed' }),
+    ]);
+    const annotations = [comment(), comment({ status: 'accepted' }), comment({ status: 'resolved' })];
+    // Two findings and two comments are outstanding. Accepted is outstanding:
+    // agreeing something is a problem is not fixing it.
+    expect(openIssueCount(state.views, annotations)).toBe(4);
+  });
+
+  it('does not let the severity filter drop the user own writing', () => {
+    // A comment has no severity, so no severity chip can match it. Filtering it
+    // out would lose the user's work behind a control that does not mention it.
+    const state = load([finding({ severity: 'critical' })]);
+    const filtered = filterViews({ ...state, severities: ['info'] });
+    expect(filtered).toHaveLength(0);
+    expect(issueRows(filtered, [comment()], false)).toHaveLength(1);
   });
 });

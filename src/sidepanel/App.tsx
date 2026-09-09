@@ -8,7 +8,7 @@ import { renderReport, reportFileName } from '../report/render';
 import { buildAuditPdf, pdfFileName } from '../pdf/report';
 import { auditFileName, buildAuditFile, serializeAuditFile } from '../storage/file';
 import { saveFile } from '../storage/download';
-import { carryComments, notesBucketId } from '../storage/annotations';
+import { announceComments, carryComments, notesBucketId, NOTES_AT_KEY } from '../storage/annotations';
 import { dataUrlToBlob } from '../shared/utils/base64';
 import type { AnnotationTarget } from '../shared/messaging/protocol';
 import type { Annotation, Audit, Finding, Severity } from '../shared/types';
@@ -18,16 +18,18 @@ import { useLibrary, type ActiveAudit } from './state/useLibrary';
 import { useScreenshots } from './state/useScreenshots';
 import { useAnnotations, type AnnotationSource } from './state/useAnnotations';
 import {
+  closedAnnotations,
   commentPins,
   countByStatus,
   EMPTY_STATE,
   filterViews,
+  openIssueCount,
   ordinals as ordinalsOf,
   pinsFor,
   reduce,
 } from './state/findings';
 import { AuditLauncher } from './components/AuditLauncher';
-import { FindingsList } from './components/FindingsList';
+import { IssuesList } from './components/IssuesList';
 import { FindingDetail } from './components/FindingDetail';
 import { CompareCard } from './components/CompareCard';
 import { HistoryCard } from './components/HistoryCard';
@@ -231,7 +233,18 @@ export function App(): React.ReactElement {
     [findings.views],
   );
   const statusCounts = useMemo(() => countByStatus(findings.views), [findings.views]);
-  const closedCount = statusCounts.dismissed + statusCounts.resolved;
+  /*
+   * One toggle over the whole list, so it has to count the whole list.
+   * "Show 3 dismissed or resolved" that only knew about findings would hide
+   * a triaged comment with nothing on screen offering to show it again.
+   */
+  const closedCount =
+    statusCounts.dismissed + statusCounts.resolved + closedAnnotations(comments.annotations);
+  /** What is left to do, over findings and comments together. */
+  const outstanding = useMemo(
+    () => openIssueCount(findings.views, comments.annotations),
+    [findings.views, comments.annotations],
+  );
   const selected = visible.find((view) => view.finding.id === findings.selectedId) ?? null;
   const inReport = findings.views.filter((view) => view.inReport);
 
@@ -301,6 +314,46 @@ export function App(): React.ReactElement {
   }, [page.annotationTarget]);
 
   /**
+   * A comment stored by another document, seen without being told.
+   *
+   * chrome.storage is the one thing every document can watch, so the worker
+   * announces there as well as over the port. This is the fast path when the
+   * worker lives long enough to write it; `revisited` below is what covers the
+   * case where it does not.
+   */
+  const [announced, setAnnounced] = useState(0);
+  useEffect(() => {
+    const onChanged = (changes: Record<string, chrome.storage.StorageChange>): void => {
+      if (NOTES_AT_KEY in changes) setAnnounced((count) => count + 1);
+    };
+    chrome.storage.onChanged.addListener(onChanged);
+    return () => chrome.storage.onChanged.removeListener(onChanged);
+  }, []);
+
+  /**
+   * Coming back to the panel is a reason to look for comments.
+   *
+   * Every push notice can be missed. The port one needs a live port at the
+   * instant it fires, and on the path where the worker stored the comment
+   * precisely because no panel was listening, that is what was not true. The
+   * storage one needs the worker to survive long enough to write it -- and a
+   * worker that was force-stopped and woken to handle one message does not
+   * always: measured, with the comment on disk and the key never set.
+   *
+   * So the panel also pulls. Looking again when somebody looks at it is the
+   * cheapest possible trigger and the one that matches the question being
+   * asked: carryComments moves nothing when there is nothing waiting.
+   */
+  const [revisited, setRevisited] = useState(0);
+  useEffect(() => {
+    const onVisible = (): void => {
+      if (document.visibilityState === 'visible') setRevisited((count) => count + 1);
+    };
+    document.addEventListener('visibilitychange', onVisible);
+    return () => document.removeEventListener('visibilitychange', onVisible);
+  }, []);
+
+  /**
    * Notes about this site belong to whatever audit is now open.
    *
    * Covers three ways a note can be waiting: written before any audit ran,
@@ -326,7 +379,14 @@ export function App(): React.ReactElement {
       .catch(() => {
         /* nothing to carry, or no storage */
       });
-  }, [active?.audit.id, active?.audit.origin, page.reconnects, page.commentsChanged]);
+  }, [
+    active?.audit.id,
+    active?.audit.origin,
+    page.reconnects,
+    page.commentsChanged,
+    announced,
+    revisited,
+  ]);
 
   /**
    * A comment finished on the page becomes a stored comment here.
@@ -365,6 +425,10 @@ export function App(): React.ReactElement {
           }),
         );
         const saved = await comments.add({
+          // Keyed by the submission, not by chance: the page resends until it
+          // is answered and every panel on the page is offered it, so this is
+          // what stops one comment becoming several.
+          id: submission.submissionId,
           body: submission.body,
           priority: submission.priority,
           author: submission.author,
@@ -373,6 +437,23 @@ export function App(): React.ReactElement {
           snapshotId: submission.target?.snapshotId ?? null,
         });
         if (saved) handled.current.add(submission.submissionId);
+        if (saved) {
+          /*
+           * Tell the other panels, because there are other panels.
+           *
+           * Every activated page carries a framed panel now, and a comment
+           * written on the page is offered to all of them. The one that answers
+           * is whichever heard first -- often the framed panel, which has no
+           * audit open, so it files the comment in the site's notes bucket and
+           * the panel that does have the audit open never learns there is
+           * anything to collect. It showed an empty list with the comment
+           * already on disk.
+           *
+           * The announcement is the same one the worker makes, and the carry it
+           * triggers is what puts the comment where it belongs.
+           */
+          void announceComments();
+        }
         send({
           type: 'ANNOTATION_SAVED',
           payload: saved ? { ok: true } : { ok: false, detail: 'That comment could not be saved.' },
@@ -397,6 +478,19 @@ export function App(): React.ReactElement {
     setOpenComment(null);
     dispatch({ type: 'select', id });
     requestAnimationFrame(() => detailRef.current?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }));
+  }, []);
+
+  /*
+   * One list, one selection.
+   *
+   * The two used to be independent, which was fine when they lived in separate
+   * cards and is not now: a finding's detail card open below the list while a
+   * comment two rows up is also marked current gives two answers to "what am I
+   * looking at", and the page draws a highlight for whichever it saw last.
+   */
+  const openCommentRow = useCallback((id: string | null) => {
+    setOpenComment(id);
+    if (id) dispatch({ type: 'select', id: null });
   }, []);
 
   /** Jumps the page to a comment's anchor, when it has one. */
@@ -623,6 +717,20 @@ export function App(): React.ReactElement {
         <span className="head-origin mono truncate">
           {page.url ? displayOrigin(page.url) : 'No page connected'}
         </span>
+        {/*
+          The one number the merge is for.
+ 
+          Findings and comments were two lists with two counts, so "how much is
+          left on this page" had two answers and neither was it. Here, above the
+          filters and outside anything that folds away, so it survives scrolling
+          a long list and is not changed by a severity filter -- what is
+          outstanding is outstanding whether or not you are looking at it.
+        */}
+        {outstanding > 0 ? (
+          <span className="head-count" title="Findings and comments still open">
+            {outstanding} open
+          </span>
+        ) : null}
         {page.activated ? (
           <button type="button" className="link" onClick={() => send({ type: 'DEACTIVATE' })}>
             Stop
@@ -656,7 +764,19 @@ export function App(): React.ReactElement {
 
             {active && active.source !== 'live' ? <ReopenedBanner active={active} /> : null}
 
-            {active && findings.views.length === 0 ? (
+            <CommentsCard
+              comments={comments}
+              activated={page.activated}
+              canComment={origin !== null}
+              picking={page.annotating}
+              target={commentTarget}
+              onPick={() => send({ type: 'START_ANNOTATION', payload: { anchored: true } })}
+              onPickPage={() => send({ type: 'START_ANNOTATION', payload: { anchored: false } })}
+              onCancelPick={() => send({ type: 'CANCEL_ANNOTATION' })}
+              onClearTarget={() => setCommentTarget(null)}
+            />
+
+            {active && findings.views.length === 0 && comments.annotations.length === 0 ? (
               <div className="empty">
                 Nothing found in {active.audit.categories.length} categor
                 {active.audit.categories.length === 1 ? 'y' : 'ies'} across {active.audit.elementsScanned}{' '}
@@ -664,17 +784,23 @@ export function App(): React.ReactElement {
               </div>
             ) : null}
 
-            {findings.views.length > 0 ? (
+            {findings.views.length > 0 || comments.annotations.length > 0 ? (
               <>
-                <FindingsList
+                <IssuesList
                   views={visible}
+                  annotations={comments.annotations}
+                  comments={comments}
                   counts={counts}
                   severities={findings.severities}
                   showClosed={findings.showClosed}
                   closedCount={closedCount}
                   selectedId={findings.selectedId}
+                  openComment={openComment}
                   ordinals={ordinals}
                   onSelect={openFinding}
+                  onSelectComment={openCommentRow}
+                  onLocateComment={locateComment}
+                  onCommentStatus={(id, status) => void comments.setStatus(id, status)}
                   onToggleSeverity={(severity) => dispatch({ type: 'toggleSeverity', severity })}
                   onShowClosed={(value) => dispatch({ type: 'showClosed', value })}
                 />
@@ -702,21 +828,6 @@ export function App(): React.ReactElement {
                 {active ? <AuditFooter active={active} inReport={inReport.length} /> : null}
               </>
             ) : null}
-
-            <CommentsCard
-              comments={comments}
-              activated={page.activated}
-              canComment={origin !== null}
-              picking={page.annotating}
-              target={commentTarget}
-              activeId={openComment}
-              onPick={() => send({ type: 'START_ANNOTATION', payload: { anchored: true } })}
-              onPickPage={() => send({ type: 'START_ANNOTATION', payload: { anchored: false } })}
-              onCancelPick={() => send({ type: 'CANCEL_ANNOTATION' })}
-              onClearTarget={() => setCommentTarget(null)}
-              onSelect={setOpenComment}
-              onLocate={locateComment}
-            />
 
             <LibraryMessages library={library} />
 

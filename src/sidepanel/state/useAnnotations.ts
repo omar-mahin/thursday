@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import type { AnnotationTarget } from '../../shared/messaging/protocol';
-import type { Annotation, AnnotationAttachment, AnnotationPriority } from '../../shared/types';
+import type { Annotation, AnnotationAttachment, AnnotationPriority, FindingStatus } from '../../shared/types';
 import { newId } from '../../shared/utils/id';
 import { blobToDataUrl, dataUrlToBlob } from '../../shared/utils/base64';
 import {
@@ -53,6 +53,22 @@ export type AnnotationSource = {
 
 /** What the compose box hands over. */
 export type NewAnnotation = {
+  /**
+   * The comment's identity, when the caller has one to give.
+   *
+   * A comment written on the page arrives with a submission id, and the page
+   * resends it until somebody answers -- so the same comment can be stored by
+   * more than one panel. Every activated page carries a framed panel now, and
+   * the submission is offered to all of them, so "more than one" is the normal
+   * case rather than the unlucky one. Each generating its own id turned one
+   * comment into two identical rows -- measured in the database, two rows with
+   * the same words and different keys.
+   *
+   * Keying on the submission makes every store of one comment the same row,
+   * whoever performs it and however many times. Absent for a comment created
+   * in the panel, which has no submission behind it.
+   */
+  id?: string;
   body: string;
   /** What the author chose in the composer. */
   priority?: AnnotationPriority;
@@ -98,6 +114,8 @@ const message = (error: unknown, fallback: string): string =>
 export function useAnnotations(source: AnnotationSource | null): AnnotationsState & {
   add(input: NewAnnotation): Promise<boolean>;
   edit(id: string, body: string, priority?: AnnotationPriority): Promise<void>;
+  /** Triage, on the same four-rung ladder a finding uses. */
+  setStatus(id: string, status: FindingStatus): Promise<void>;
   attach(id: string, files: readonly File[]): Promise<void>;
   detach(annotationId: string, attachmentId: string): Promise<void>;
   remove(id: string): Promise<void>;
@@ -262,7 +280,7 @@ export function useAnnotations(source: AnnotationSource | null): AnnotationsStat
       if (!auditIdentifier || !body) return false;
       setState((current) => ({ ...current, busy: true, error: null }));
       try {
-        const id = newId();
+        const id = input.id ?? newId();
         const { metas, blobs: accepted, refusals } = await intake(
           id,
           auditIdentifier,
@@ -341,6 +359,34 @@ export function useAnnotations(source: AnnotationSource | null): AnnotationsStat
         setState((current) => ({
           ...current,
           error: message(error, 'That edit is in the panel but could not be saved.'),
+        }));
+      }
+    },
+    [mutate],
+  );
+
+  /**
+   * Triage, on the same ladder a finding uses.
+   *
+   * Written through to storage the same way an edit is, and left in the panel
+   * if that write fails -- losing the click would be worse than a status that
+   * is only in this session, and the failure is said out loud either way.
+   */
+  const setStatus = useCallback(
+    async (id: string, status: FindingStatus) => {
+      mutate((list) =>
+        list.map((annotation) =>
+          annotation.id === id ? { ...annotation, status, updatedAt: Date.now() } : annotation,
+        ),
+      );
+      const target = listRef.current.find((annotation) => annotation.id === id);
+      if (!target || !persistedRef.current) return;
+      try {
+        await saveAnnotation(target, new Map());
+      } catch (error) {
+        setState((current) => ({
+          ...current,
+          error: message(error, 'That status is in the panel but could not be saved.'),
         }));
       }
     },
@@ -439,5 +485,5 @@ export function useAnnotations(source: AnnotationSource | null): AnnotationsStat
 
   const reload = useCallback(() => setReloads((count) => count + 1), []);
 
-  return { ...state, add, edit, attach, detach, remove, dataUrls, pdfImages, dismissError, reload };
+  return { ...state, add, edit, setStatus, attach, detach, remove, dataUrls, pdfImages, dismissError, reload };
 }

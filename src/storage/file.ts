@@ -390,6 +390,17 @@ function annotation(value: unknown, auditId: string): Annotation | null {
   if (isAnnotationPriority(value['priority'])) result.priority = value['priority'];
   const author = str(value['author']).slice(0, 120);
   if (author) result.author = author;
+  /*
+   * Only a status the file actually carries.
+   *
+   * `oneOf` with a default would write `open` into every comment out of an
+   * older file, which reads as "somebody looked at this and left it open"
+   * when nobody did. Absent stays absent, and the panel defaults it for
+   * display without recording the guess.
+   */
+  if (STATUSES.includes(value['status'] as FindingStatus)) {
+    result.status = value['status'] as FindingStatus;
+  }
   return result;
 }
 

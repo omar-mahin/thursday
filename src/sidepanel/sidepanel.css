@@ -122,7 +122,7 @@ body { min-width: 320px; }
   letter-spacing: 0.06em;
   text-transform: uppercase;
   color: var(--fg-dim);
-  /* 8, not 3. See the note on .findings: the panel's own spacing step is 8 and
+  /* 8, not 3. See the note on .issues: the panel's own spacing step is 8 and
      UI-002 named this gap -- it sits above every paragraph and list in an open
      finding, so it was one declaration producing many outliers. */
   margin: 0 0 8px;
@@ -178,12 +178,12 @@ body { min-width: 320px; }
  * 8px, and it was 4px until Thursday's own UI-002 said so.
  *
  * The rule works out a page's dominant spacing step and reports what sits off
- * it; the panel's step is 8, and the findings list -- one gap per row, so the
+ * it; the panel's step is 8, and the issues list -- one gap per row, so the
  * largest single group of gaps on the surface -- was the biggest thing off it.
- * There was a second, dead `.findings` rule above this one setting 6px, which
- * is how the inconsistency got in.
+ * There was a second, dead rule above this one setting 6px, which is how the
+ * inconsistency got in.
  */
-.findings { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
+.issues { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .group-items { list-style: none; margin: 0; padding: 0 0 4px; display: flex; flex-direction: column; gap: 2px; }
 .group-items .finding.group > .finding-head .mono { white-space: nowrap; flex: none; }
 .finding-row { border-radius: 0; border-left: 2px solid var(--line); margin-left: 10px; }
@@ -372,6 +372,22 @@ button.icon:hover { color: var(--fg); background: none; }
   border-bottom: 1px solid var(--line);
 }
 .head-origin { flex: 1; min-width: 0; font-size: 12px; color: var(--fg-dim); }
+/*
+ * How much is left, in the one place that never scrolls away.
+ *
+ * Not a link and not a button: it is a number, and making it look pressable
+ * would be the UX-004 confusion this panel was already caught by once.
+ */
+.head-count {
+  flex: none;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--fg);
+  background: var(--bg-raised);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 1px 8px;
+}
 .panel-head button.link { min-width: 24px; min-height: 24px; padding: 2px 6px; }
 
 .more { border-top: 1px solid var(--line); padding-top: 8px; }
@@ -456,7 +472,6 @@ button.icon:hover { color: var(--fg); background: none; }
   padding: 6px 8px;
   resize: vertical;
 }
-.comment-list { list-style: none; margin: 10px 0 0; padding: 0; display: flex; flex-direction: column; gap: 8px; }
 .comment-row {
   border: 1px solid var(--line);
   border-left: 3px solid var(--comment);
@@ -468,6 +483,33 @@ button.icon:hover { color: var(--fg); background: none; }
   gap: 6px;
 }
 .comment-row[data-current='true'] { border-color: var(--accent); border-left-color: var(--comment); }
+/*
+ * A triaged comment recedes exactly as a triaged finding does.
+ *
+ * Sharing the list means sharing what "closed" looks like -- a resolved comment
+ * that stayed as loud as an open one would make the list's single count look
+ * wrong to anyone reading it rather than counting it.
+ */
+.comment-row[data-status='resolved'],
+.comment-row[data-status='dismissed'] { opacity: 0.62; }
+.issues-head { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; }
+.issues-head .hint { margin-left: auto; flex: none; }
+/*
+ * Marks the row as the user's own claim, in the slot a finding fills with its
+ * measured severity. Deliberately quiet: it is a label, not a badge competing
+ * with the severity chips next to it.
+ */
+.from-you {
+  flex: none;
+  /* 12px, not 11, for the same reason the priority chip next to it is: RESP-003
+     caught this label at 11px on a 400px panel, which is the width the panel
+     actually is. Thursday's own rule, on Thursday's own surface. */
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--comment);
+  font-weight: 600;
+}
 .comment-head { display: flex; align-items: center; gap: 7px; min-width: 0; }
 .comment-head .hint:last-child { margin-left: auto; flex: none; }
 /*

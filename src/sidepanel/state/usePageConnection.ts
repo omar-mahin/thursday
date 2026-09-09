@@ -125,6 +125,14 @@ export function usePageConnection(): {
 } {
   const [page, setPage] = useState<PageState>(INITIAL);
   const portRef = useRef<TypedPort | null>(null);
+  /**
+   * Reopens the port. Set by the effect that owns it.
+   *
+   * A ref rather than a callback, because `send` needs it and it must not be a
+   * dependency of anything: re-creating `send` on every reconnect would
+   * re-create every handler that closes over it.
+   */
+  const reopen = useRef<(() => TypedPort | null) | null>(null);
   /** Messages waiting for a port. See OUTBOX_LIMIT. */
   const outbox = useRef<{ at: number; message: ThursdayMessage }[]>([]);
 
@@ -354,9 +362,33 @@ export function usePageConnection(): {
     };
 
     open();
+    reopen.current = () => {
+      attempts = 0;
+      open();
+      return portRef.current;
+    };
+
+    /*
+     * Coming back to the panel is a reason to check the connection.
+     *
+     * A backgrounded panel can lose its port without hearing about it, and
+     * nothing here polls -- deliberately, because a heartbeat would keep the
+     * service worker alive forever and MV3 workers are meant to die. Looking at
+     * the panel again is the moment it matters, and it is free.
+     */
+    const onVisible = (): void => {
+      if (document.visibilityState !== 'visible' || disposed) return;
+      if (portRef.current) return;
+      attempts = 0;
+      open();
+      setPage((state) => ({ ...state, reconnects: state.reconnects + 1 }));
+    };
+    document.addEventListener('visibilitychange', onVisible);
 
     return () => {
       disposed = true;
+      reopen.current = null;
+      document.removeEventListener('visibilitychange', onVisible);
       if (retry !== undefined) clearTimeout(retry);
       portRef.current?.disconnect();
       portRef.current = null;
@@ -372,9 +404,27 @@ export function usePageConnection(): {
           port.post(message);
           return;
         } catch {
-          // postMessage on a port whose worker has gone throws. Treat it as a
-          // disconnect: onDisconnect is already on its way with a reconnect.
+          /*
+           * postMessage on a port whose worker has gone throws.
+           *
+           * This used to null the port and leave it, on the reasoning that
+           * onDisconnect was already on its way with a reconnect. That is an
+           * assumption about an event arriving, and the cost of it being wrong
+           * is a panel that hears nothing at all with nothing on screen to say
+           * so -- the failure this whole file exists for. Reconnecting here
+           * instead costs one connect on a port that was already broken, and
+           * assumes nothing.
+           */
           portRef.current = null;
+          const fresh = reopen.current?.() ?? null;
+          if (fresh) {
+            try {
+              fresh.post(message);
+              return;
+            } catch {
+              /* fall through to the outbox */
+            }
+          }
         }
       }
       if (!replayable(message)) return;

@@ -1,7 +1,7 @@
 import type { AnnotationSubmission } from '../shared/messaging/protocol';
 import type { Annotation, AnnotationAttachment } from '../shared/types';
 import { dataUrlToBlob } from '../shared/utils/base64';
-import { newId } from '../shared/utils/id';
+import { STORAGE_KEY_PREFIX } from '../shared/constants/product';
 import {
   requestAsPromise,
   STORE_ANNOTATIONS,
@@ -156,21 +156,62 @@ export const notesBucketId = (origin: string): string => `notes:${origin}`;
  *
  * One mapping, so the two cannot disagree about which fields survive.
  */
+/**
+ * Announces that a comment was stored somewhere a panel may not have seen.
+ *
+ * The port notice this replaces was an event on a queue, and an event needs
+ * somebody listening at the moment it fires. It was held for the tab the
+ * comment was written on and handed to the first panel from that tab to
+ * reconnect -- which, with a panel now mounted on every activated page, is
+ * usually the framed one, which had no audit open and so could do nothing with
+ * it. It took the notice and dropped it, and the panel that could have acted
+ * was never told: the comment sat on disk, acknowledged to the page, absent
+ * from the list until somebody reloaded.
+ *
+ * chrome.storage is the one thing every document can watch, and a timestamp in
+ * it is state rather than an event: whoever reads it next sees it, however many
+ * of them there are and whenever they arrive. Same reason CLEARED_AT_KEY exists.
+ */
+export const NOTES_AT_KEY = `${STORAGE_KEY_PREFIX}notesAt`;
+
+export async function announceComments(): Promise<void> {
+  try {
+    await chrome.storage.local.set({ [NOTES_AT_KEY]: Date.now() });
+  } catch {
+    /* stored either way; this only tells other documents to look */
+  }
+}
+
 export function annotationFromSubmission(
   submission: AnnotationSubmission,
   auditId: string,
   now = Date.now(),
 ): { annotation: Annotation; blobs: Map<string, Blob> } {
-  const id = newId();
+  /*
+   * The submission's own id, not a fresh one.
+   *
+   * The page resends a comment until somebody acknowledges it, so the same
+   * submission can be stored twice: once by the panel and once by the worker,
+   * on either side of a reconnect. `submissionId` exists to stop at-least-once
+   * delivery becoming duplicate comments -- but it was only ever checked by an
+   * in-memory set in the panel, which the worker does not share and a panel
+   * reload forgets, so a retry that changed hands produced two rows with two
+   * random ids. Using it as the key makes every store of one submission the
+   * same row, in whichever bucket it lands, and a second store an overwrite.
+   */
+  const id = submission.submissionId;
   const blobs = new Map<string, Blob>();
   const attachments: AnnotationAttachment[] = [];
 
-  for (const image of submission.images) {
+  for (let index = 0; index < submission.images.length; index += 1) {
+    const image = submission.images[index]!;
     const blob = dataUrlToBlob(image.dataUrl);
     // An image that will not decode is dropped rather than stored as a row
     // with no bytes. The words are the part worth keeping.
     if (!blob) continue;
-    const attachmentId = newId();
+    // Derived for the same reason the annotation's id is: a retry must not add
+    // a second copy of the same picture beside the first.
+    const attachmentId = `${id}-${index}`;
     blobs.set(attachmentId, blob);
     attachments.push({
       id: attachmentId,

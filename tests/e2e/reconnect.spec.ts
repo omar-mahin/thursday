@@ -1,4 +1,4 @@
-import { expect, openMoreIn, testWithCapture as test } from './fixtures';
+import { expect, openMoreIn, panelReady, testWithCapture as test } from './fixtures';
 import type { BrowserContext, Page } from '@playwright/test';
 
 /**
@@ -156,17 +156,32 @@ test('a comment written after the worker is collected still lands', async ({
   await expect(card).toBeHidden({ timeout: 20_000 });
   await panel.bringToFront();
   /*
-   * Generous, because the claim is that it lands rather than that it lands
-   * quickly. Getting here can involve a port reconnect, the worker storing the
-   * note itself, a panel reconnect and then the note being carried into the
-   * open audit -- and under a full-suite load that chain took longer than the
-   * default five seconds often enough to fail about one run in three.
+   * Room for the round trips, not for a bug.
+   *
+   * This failed roughly one run in four, and a longer wait did not help because
+   * the wait was never the problem. Two things were, and both are now fixed:
+   *
+   *  - the notice telling a panel to look was an event on a queue, drained by
+   *    whichever panel reconnected first. That is usually the framed panel on
+   *    the page, which has no audit open and can do nothing with it, so it took
+   *    the notice and dropped it. It is announced through chrome.storage now,
+   *    where it is state that any panel can read whenever it arrives, and the
+   *    panel also looks again whenever somebody looks at it.
+   *  - both panels stored the comment, each under an id of its own making, so
+   *    one comment became two rows. They are keyed by the submission now.
+   *
+   * Thirty consecutive runs after that, none slower than two seconds.
    */
   await expect(panel.locator('.comment-body')).toHaveText('Written after the worker died.', {
-    timeout: 25_000,
+    timeout: 15_000,
   });
-  // Once, not twice. The page resends until it is acknowledged, so this is the
-  // assertion that the resending cannot produce a second comment.
+  /*
+   * Once, not twice.
+   *
+   * The page resends until it is acknowledged and every panel on the page is
+   * offered the submission, so this is the assertion that at-least-once
+   * delivery cannot turn one comment into several. It has caught it.
+   */
   await expect(panel.locator('.comment-row')).toHaveCount(1);
 });
 
@@ -229,6 +244,71 @@ test('a comment written with the side panel closed is still kept', async ({
   await openMoreIn(later);
   await later.locator('.history-open').first().click();
   await expect(later.locator('.comment-body')).toHaveText('Written with the panel shut.');
+});
+
+test('a comment is not lost to a panel that belongs to a different tab', async ({
+  openFixture,
+  activate,
+  extensionId,
+  context,
+}) => {
+  /*
+   * The hole the flaky test above was falling into, without the race.
+   *
+   * Whether the worker forwards a comment to a panel or stores it itself was
+   * decided by `panelPorts.size` -- how many panels exist -- while the actual
+   * send filters out any panel that belongs to a different tab. Those are not
+   * the same question, and when the answers differed the comment went nowhere:
+   * not forwarded, not stored, not acknowledged, and the card on the page stuck
+   * at "Adding..." until its own deadline gave up on somebody's words.
+   *
+   * Reached here the way a user would: this page's panel frame will not load,
+   * which is the situation the "open the panel in a tab" escape hatch exists
+   * for, while a second tab has a panel of its own that works fine.
+   */
+  const other = await openFixture('cro.html');
+  await activate(other);
+  await panelReady(other);
+
+  const page = await openFixture('accessibility.html');
+  await activate(page);
+  await panelReady(page);
+  // This page's panel, gone -- so the only panel connected belongs to the
+  // other tab, and `toPanels` will filter it out for anything about this one.
+  await page.evaluate(() => {
+    const frame = document
+      .querySelector('thursday-root')
+      ?.shadowRoot?.querySelector('iframe.pf-frame') as HTMLIFrameElement | null;
+    frame?.remove();
+  });
+
+  await page.bringToFront();
+  await page.locator('thursday-root [data-action="comment"]').click();
+  const target = (await page.locator('p.faint').boundingBox())!;
+  const at = { x: target.x + target.width / 2, y: target.y + target.height / 2 };
+  await page.mouse.move(at.x, at.y);
+  await page.mouse.click(at.x, at.y);
+
+  const card = page.locator('thursday-root .cm-card');
+  await expect(card).toBeVisible();
+  await page.locator('thursday-root .cm-body').fill('Nobody here to forward this to.');
+  await page.locator('thursday-root .cm-add').click();
+
+  // Kept, and said so. The card closes only on an acknowledgement.
+  await expect(card).toBeHidden({ timeout: 20_000 });
+
+  /*
+   * And really on disk, not merely acknowledged.
+   *
+   * Asked through a panel opened on its own, because that is the one panel that
+   * hears about every page. The other tab's panel is deliberately not told:
+   * a notice about one tab reaching another tab's panel is the cross-tab bleed
+   * that keying the ports by tab exists to prevent.
+   */
+  const panel = await openPanel(context, extensionId);
+  await expect(panel.locator('.comment-body')).toHaveText('Nobody here to forward this to.', {
+    timeout: 20_000,
+  });
 });
 
 test('a comment gives up rather than waiting forever when the extension goes away', async ({

@@ -7,6 +7,7 @@ import {
   parseAuditFile,
   serializeAuditFile,
 } from '../../src/storage/file';
+import { annotationFromSubmission } from '../../src/storage/annotations';
 import { fitWithin } from '../../src/shared/media/image';
 import type { Annotation, Audit, ElementReference, PageSnapshotDigest } from '../../src/shared/types';
 
@@ -186,6 +187,39 @@ describe('comments in an audit file', () => {
     expect(FILE_VERSION).toBeGreaterThanOrEqual(2);
   });
 
+  it('carries a triaged comment status through a file', () => {
+    const { file } = roundTrip([annotation({ status: 'resolved' })]);
+    expect(file.annotations?.[0]?.status).toBe('resolved');
+  });
+
+  it('leaves an untriaged comment with no status rather than inventing open', () => {
+    /*
+     * `open` written here would read as "somebody looked at this and left it
+     * open" when nobody did, and it would mean a file from before this field
+     * existed came back claiming a triage decision it never held.
+     */
+    const { file } = roundTrip([annotation()]);
+    expect(file.annotations?.[0]).not.toHaveProperty('status');
+  });
+
+  it('drops a status the file made up', () => {
+    const source = buildAuditFile({
+      audit,
+      findings: [],
+      digest,
+      productVersion: '0.2.0',
+      annotations: [annotation()],
+      attachments: {},
+    });
+    const tampered = JSON.parse(serializeAuditFile(source)) as {
+      annotations: Array<Record<string, unknown>>;
+    };
+    tampered.annotations[0]!['status'] = 'urgent';
+    const outcome = parseAuditFile(JSON.stringify(tampered));
+    if (!outcome.ok) throw new Error(outcome.error);
+    expect(outcome.value.file.annotations?.[0]?.status).toBeUndefined();
+  });
+
   it('survives a round trip with its anchor and its image', () => {
     const { file, warnings } = roundTrip(
       [annotation({ elementRef: reference(), attachments: [attachment()] })],
@@ -347,5 +381,53 @@ describe('scaling an attached image', () => {
 
   it('does not divide by zero on a degenerate image', () => {
     expect(fitWithin(0, 0, 1600)).toEqual({ width: 0, height: 0 });
+  });
+});
+
+/**
+ * At-least-once delivery, without duplicate comments.
+ *
+ * The page resends a comment until somebody acknowledges it, and either the
+ * panel or the service worker may be the one that stores it -- so the same
+ * submission really does get stored twice, in different buckets, on either side
+ * of a reconnect. `submissionId` is what is meant to stop that becoming two
+ * comments, and for a while it did not: the only check was an in-memory set in
+ * the panel, which the worker does not share and a panel reload forgets.
+ */
+describe('storing the same submission twice', () => {
+  const submission = {
+    submissionId: 'sub-1',
+    target: null,
+    body: 'Said once, sent twice.',
+    priority: 'normal' as const,
+    author: 'Omar',
+    images: [],
+  };
+
+  it('produces the same row rather than two', () => {
+    const first = annotationFromSubmission(submission, 'audit-1');
+    const second = annotationFromSubmission(submission, 'notes:https://example.test');
+
+    // Same key, so the second store overwrites the first instead of adding to
+    // it. The bucket differs -- that is what carryComments is for -- but the
+    // identity does not.
+    expect(first.annotation.id).toBe('sub-1');
+    expect(second.annotation.id).toBe(first.annotation.id);
+  });
+
+  it('does not add a second copy of an attached image', () => {
+    const withImage = {
+      ...submission,
+      images: [{ mime: 'image/png', dataUrl: PIXEL, name: 'shot.png' }],
+    };
+    const first = annotationFromSubmission(withImage, 'audit-1');
+    const second = annotationFromSubmission(withImage, 'audit-1');
+    expect(first.annotation.attachments[0]?.id).toBe('sub-1-0');
+    expect(second.annotation.attachments[0]?.id).toBe(first.annotation.attachments[0]?.id);
+  });
+
+  it('keeps two different submissions apart', () => {
+    const other = annotationFromSubmission({ ...submission, submissionId: 'sub-2' }, 'audit-1');
+    expect(other.annotation.id).not.toBe('sub-1');
   });
 });

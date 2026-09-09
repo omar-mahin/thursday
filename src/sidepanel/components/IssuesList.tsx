@@ -1,42 +1,86 @@
 import { useState } from 'react';
 import { SEVERITY_LABELS } from '../../audit/engine/severity';
 import { ruleById } from '../../audit/engine/registry';
-import type { Severity } from '../../shared/types';
-import { groupByRule, type FindingGroup, type FindingView } from '../state/findings';
+import type { Annotation, FindingStatus, Severity } from '../../shared/types';
+import { annotationStatus, issueRows, type FindingGroup, type FindingView } from '../state/findings';
+import { CommentRow } from './CommentRow';
+import type { useAnnotations } from '../state/useAnnotations';
 
 const ORDER: Severity[] = ['critical', 'high', 'medium', 'low', 'info'];
 
 /**
- * The findings list: repeats of one rule are grouped, because eight separate
- * "target too small" rows push the unlabelled control off the screen.
+ * One list of everything there is to do.
+ *
+ * Findings and the user's own comments share it, because they are the same kind
+ * of work even though they are different kinds of claim: one measured, one an
+ * opinion. Two lists meant triaging twice and two answers to "how much is
+ * left", so they are merged, ordered together, closed together -- and kept
+ * visually distinct, so nothing the user wrote can be mistaken for something
+ * Thursday measured.
+ *
+ * Repeats of one rule are still grouped, because eight separate "target too
+ * small" rows push the unlabelled control off the screen.
  */
-export function FindingsList({
+export function IssuesList({
   views,
+  annotations,
+  comments,
   counts,
   severities,
   showClosed,
   closedCount,
   selectedId,
+  openComment,
   ordinals,
   onSelect,
+  onSelectComment,
+  onLocateComment,
+  onCommentStatus,
   onToggleSeverity,
   onShowClosed,
 }: {
   views: FindingView[];
+  annotations: readonly Annotation[];
+  comments: ReturnType<typeof useAnnotations>;
   counts: Record<Severity, number>;
   severities: Severity[];
   showClosed: boolean;
   closedCount: number;
   selectedId: string | null;
+  openComment: string | null;
   ordinals: Map<string, number>;
   onSelect(id: string): void;
+  onSelectComment(id: string | null): void;
+  onLocateComment(annotation: Annotation): void;
+  onCommentStatus(id: string, status: FindingStatus): void;
   onToggleSeverity(severity: Severity): void;
   onShowClosed(value: boolean): void;
 }): React.ReactElement {
-  const groups = groupByRule(views);
+  const rows = issueRows(views, annotations, showClosed);
+
+  const openComments = annotations.filter((annotation) => annotationStatus(annotation) === 'open').length;
 
   return (
-    <section aria-label="Findings">
+    <section aria-label="Issues">
+      {/*
+        What the count in the header is made of.
+ 
+        A breakdown rather than a second total, because two totals on one screen
+        is how you end up with two of them disagreeing. This says which half is
+        measured and which half is the user's, which is the distinction that
+        makes a shared list safe.
+      */}
+      <div className="issues-head">
+        <span className="section-title" style={{ marginBottom: 0 }}>
+          Issues
+        </span>
+        <span className="hint">
+          {views.length} finding{views.length === 1 ? '' : 's'}
+          {annotations.length > 0 ? ` · ${annotations.length} from you` : ''}
+          {openComments !== annotations.length ? ` (${openComments} open)` : ''}
+        </span>
+      </div>
+
       <div className="filters" role="group" aria-label="Filter by severity">
         {ORDER.filter((severity) => counts[severity] > 0).map((severity) => {
           const active = severities.length === 0 || severities.includes(severity);
@@ -64,19 +108,33 @@ export function FindingsList({
         </label>
       ) : null}
 
-      {views.length === 0 ? (
+      {rows.length === 0 ? (
         <div className="empty">Nothing matches the current filter.</div>
       ) : (
-        <ul className="findings">
-          {groups.map((group) => (
-            <Group
-              key={group.ruleId}
-              group={group}
-              selectedId={selectedId}
-              ordinals={ordinals}
-              onSelect={onSelect}
-            />
-          ))}
+        <ul className="issues">
+          {rows.map((row) =>
+            row.kind === 'findings' ? (
+              <Group
+                key={row.key}
+                group={row.group}
+                selectedId={selectedId}
+                ordinals={ordinals}
+                onSelect={onSelect}
+              />
+            ) : (
+              <CommentRow
+                key={row.key}
+                annotation={row.annotation}
+                index={row.index}
+                status={row.status}
+                comments={comments}
+                current={row.annotation.id === openComment}
+                onSelect={onSelectComment}
+                onLocate={onLocateComment}
+                onStatus={(status) => onCommentStatus(row.annotation.id, status)}
+              />
+            ),
+          )}
         </ul>
       )}
     </section>
