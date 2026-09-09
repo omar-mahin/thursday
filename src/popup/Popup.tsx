@@ -30,14 +30,30 @@ export function Popup(): React.ReactElement {
   const verdict = checkUrl(tab?.url);
   const canActivate = verdict.auditable && tab?.tabId !== undefined;
 
+  /**
+   * Opens the docked panel.
+   *
+   * `chrome.sidePanel.open` needs a user gesture, and a gesture window closes
+   * the moment anything is awaited before it -- so this is called first, from
+   * inside the click handler, and the activation that follows is awaited after.
+   */
+  const openPanel = useCallback(async (tabId: number) => {
+    try {
+      await chrome.sidePanel.open({ tabId });
+    } catch {
+      setError('Could not open the side panel.');
+    }
+  }, []);
+
   const activate = useCallback(() => {
     if (tab?.tabId === undefined) return;
     setBusy(true);
     setError(null);
+    // Before the await, while the click's gesture still counts.
+    const panel = openPanel(tab.tabId);
     void (async () => {
-      // The panel is part of what gets injected now, so activating is the
-      // whole of it: there is no second surface to open.
       const result = await sendCommand<Result<void>>({ type: 'ACTIVATE_PAGE' });
+      await panel;
       setBusy(false);
       if (!result.ok) {
         setError(USER_MESSAGES[result.error.code]);
@@ -46,7 +62,7 @@ export function Popup(): React.ReactElement {
       setActivated(true);
       window.close();
     })();
-  }, [tab]);
+  }, [tab, openPanel]);
 
   const deactivate = useCallback(() => {
     setBusy(true);
@@ -84,12 +100,11 @@ export function Popup(): React.ReactElement {
               className="primary"
               disabled={tab?.tabId === undefined}
               onClick={() => {
-                // Already running on this tab, so the panel is already on it.
-                // Nothing to open -- this just gets out of the way.
+                if (tab?.tabId !== undefined) void openPanel(tab.tabId);
                 window.close();
               }}
             >
-              Back to the page
+              Open audit panel
             </button>
             <button type="button" onClick={deactivate} disabled={busy}>
               Stop on this page

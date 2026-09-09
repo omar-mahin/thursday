@@ -366,6 +366,18 @@ testWithHostAccess(
     // Wait for the audit before reaching into history: the row only exists
     // once the audit has been stored.
     await expect(panel.locator('.finding-row').first()).toBeVisible();
+    /*
+     * And wait for the screenshot sweep, so this tests the clear rather than a
+     * race with it.
+     *
+     * It used to clear mid-sweep by accident, which made it fail whenever the
+     * timing shifted -- and it was the only thing covering either behaviour.
+     * The race has its own test below now, where it can be arranged on purpose
+     * instead of stumbled into.
+     */
+    await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+      timeout: 60_000,
+    });
     await openMore(page);
     await expect(panel.locator('.history-row').first()).toBeVisible();
 
@@ -433,5 +445,62 @@ testWithHostAccess(
         }),
     );
     expect(remaining).toEqual([0, 0, 0]);
+  },
+);
+
+testWithHostAccess(
+  'clearing everything cannot be outrun by a screenshot sweep',
+  async ({ openFixture, activate, context, extensionId }) => {
+    /*
+     * A sweep runs for a few seconds after an audit, photographing findings,
+     * and "Clear everything" is reachable in settings throughout. So the two
+     * really do overlap, and the user's instruction has to win: a picture of
+     * their page surviving a clear they asked for is the kind of thing this
+     * product cannot get wrong.
+     *
+     * The panel is told to stop, through chrome.storage, and that closed most
+     * of the window -- but only most. A write already past that check and
+     * waiting on its own transaction still landed, and one blob outlived the
+     * clear. `putScreenshot` reads the audit in the same transaction as the
+     * write now, so once `clearAll` has committed there is no audit to find
+     * and a late write declines itself.
+     */
+    const page = await openFixture('accessibility.html');
+    await activate(page);
+    const panel = await panelReady(page);
+
+    await panel.getByRole('button', { name: 'Full audit' }).click();
+    // Cleared while it is demonstrably still taking pictures, not after.
+    await expect(panel.locator('.progress', { hasText: 'Photographing' })).toBeVisible({
+      timeout: 30_000,
+    });
+
+    const options = await context.newPage();
+    await options.goto(`chrome-extension://${extensionId}/options.html`);
+    await options.getByRole('button', { name: 'Clear' }).click();
+    await expect(options.getByText('Cleared.')).toBeVisible();
+
+    // Let the sweep run itself out, so anything it was going to write, it wrote.
+    await expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
+      timeout: 60_000,
+    });
+
+    const remaining = await options.evaluate(
+      () =>
+        new Promise<number[]>((resolve, reject) => {
+          const request = indexedDB.open('thursday');
+          request.onsuccess = () => {
+            const db = request.result;
+            const read = db.transaction(['audits', 'findings', 'blobs'], 'readonly');
+            const counts = ['audits', 'findings', 'blobs'].map((name) =>
+              read.objectStore(name).count(),
+            );
+            read.oncomplete = () => resolve(counts.map((each) => each.result));
+            read.onerror = () => reject(read.error);
+          };
+          request.onerror = () => reject(request.error);
+        }),
+    );
+    expect(remaining, 'something survived a clear the user asked for').toEqual([0, 0, 0]);
   },
 );

@@ -337,7 +337,7 @@ test('the PDF carries a picture for each finding it has one for', async ({
   // Saving lives behind the panel's disclosure now.
   await openMore(page);
   const download = await Promise.all([
-    page.waitForEvent('download'),
+    panel.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save PDF' }).click(),
   ]).then(([event]) => event);
   const bytes = readFileSync(await download.path());
@@ -369,7 +369,7 @@ test('a saved audit file carries every crop inline', async ({
 
   await openMore(page);
   const download = await Promise.all([
-    page.waitForEvent('download'),
+    panel.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save audit' }).click(),
   ]).then(([event]) => event);
 

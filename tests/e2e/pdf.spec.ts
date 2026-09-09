@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { expect, openMore, panelOf, panelReady, testWithHostAccess as test, withoutPicker } from './fixtures';
-import type { BrowserContext, FrameLocator, Page } from '@playwright/test';
+import type { BrowserContext, Page } from '@playwright/test';
 
 /**
  * The PDF export, checked against a real PDF reader.
@@ -76,7 +76,7 @@ async function inkOnPage(context: BrowserContext, shot: Buffer): Promise<{ sheet
  */
 async function comment(
   page: Page,
-  panel: FrameLocator,
+  panel: Page,
   text: string,
   files?: string,
   priority?: 'medium' | 'high',
@@ -111,7 +111,7 @@ test('the PDF export is a file a real reader renders', async ({
   // Save lives behind the panel's disclosure now.
   await openMore(page);
   const download = await Promise.all([
-    page.waitForEvent('download'),
+    panel.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save PDF' }).click(),
   ]).then(([event]) => event);
 
@@ -172,7 +172,7 @@ test('the PDF carries the findings, the notes and the comments', async ({
   // Save lives behind the panel's disclosure now.
   await openMore(page);
   const download = await Promise.all([
-    page.waitForEvent('download'),
+    panel.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save PDF' }).click(),
   ]).then(([event]) => event);
   const bytes = readFileSync(await download.path()).toString('latin1');
@@ -220,7 +220,7 @@ test('the PDF names the characters it could not draw instead of mangling them', 
   // Save lives behind the panel's disclosure now.
   await openMore(page);
   const download = await Promise.all([
-    page.waitForEvent('download'),
+    panel.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save PDF' }).click(),
   ]).then(([event]) => event);
   const bytes = readFileSync(await download.path()).toString('latin1');

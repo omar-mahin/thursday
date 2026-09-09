@@ -1,5 +1,5 @@
 import { HOST_TAG_NAME } from '../shared/constants/product';
-import { COMPOSER_CSS, CONTENT_CSS, OVERLAY_CSS, PANEL_CSS, PIN_CSS, RULER_CSS } from './styles';
+import { COMPOSER_CSS, CONTENT_CSS, OVERLAY_CSS, PIN_CSS, RULER_CSS } from './styles';
 
 export type ShadowHost = {
   host: HTMLElement;
@@ -81,7 +81,7 @@ export function createHost(): ShadowHost {
 
   const root = host.attachShadow({ mode: 'open' });
   const sheet = new CSSStyleSheet();
-  sheet.replaceSync(CONTENT_CSS + OVERLAY_CSS + RULER_CSS + PIN_CSS + COMPOSER_CSS + PANEL_CSS);
+  sheet.replaceSync(CONTENT_CSS + OVERLAY_CSS + RULER_CSS + PIN_CSS + COMPOSER_CSS);
   root.adoptedStyleSheets = [sheet];
 
   const layer = document.createElement('div');

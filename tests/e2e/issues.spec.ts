@@ -1,9 +1,8 @@
 import { readFileSync } from 'node:fs';
-import type { FrameLocator, Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
 import {
   expect,
   openMore,
-  panelOf,
   panelReady,
   testWithHostAccess,
   withoutPicker,
@@ -21,20 +20,17 @@ import {
  * page lands in the same list as the findings, that triaging it behaves exactly
  * as triaging a finding does, and that the number in the header counts both.
  */
-const openPanel = async (page: Page): Promise<FrameLocator> => {
-  await panelReady(page);
-  return panelOf(page);
-};
+const openPanel = (page: Page): Promise<Page> => panelReady(page);
 
 const CARD = 'thursday-root .cm-card';
 
-const settle = (panel: FrameLocator): Promise<void> =>
+const settle = (panel: Page): Promise<void> =>
   expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, { timeout: 60_000 });
 
 /** Writes a comment about the page, which needs no picking. */
 async function writeOnPage(
   page: Page,
-  panel: FrameLocator,
+  panel: Page,
   text: string,
   priority?: string,
 ): Promise<void> {
@@ -166,7 +162,7 @@ testWithHostAccess(
     // And in the file, so a report handed on does not overstate the work left.
     await openMore(page);
     const download = await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const parsed = JSON.parse(readFileSync(await download.path(), 'utf8')) as {

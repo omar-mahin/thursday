@@ -87,14 +87,6 @@ export type ThursdayMessage =
    * rather than the original file.
    */
   | { type: 'ANNOTATION_SUBMITTED'; payload: AnnotationSubmission }
-  /**
-   * Page -> worker: open the panel as its own tab.
-   *
-   * Asked for when the framed panel will not load, which is the one case where
-   * the floating window cannot help. A content script cannot navigate anywhere
-   * itself -- its window is the page's -- so the worker does it.
-   */
-  | { type: 'OPEN_PANEL_TAB' }
   /** Panel -> page: stored, or refused with a reason to show in the card. */
   | { type: 'ANNOTATION_SAVED'; payload: { ok: true } | { ok: false; detail: string } }
   /**

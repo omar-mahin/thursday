@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
-import type { FrameLocator, Page } from '@playwright/test';
-import { expect, openMore, panelOf, panelReady, testWithHostAccess as test, toolbar, withoutPicker } from './fixtures';
+import type { Page } from '@playwright/test';
+import { expect, openMore, panelReady, testWithHostAccess as test, toolbar, withoutPicker } from './fixtures';
 import { parseAuditFile } from '../../src/storage/file';
 
 /**
@@ -15,13 +15,10 @@ import { parseAuditFile } from '../../src/storage/file';
  * The panel, as the user has it: floating on the page being audited.
  *
  * No test can drive a native save dialog, so the picker is taken away first
- * and the anchor fallback writes the same bytes (see files.spec.ts). It has to
- * happen before the panel frame exists, which is what withoutPicker handles.
+ * and the anchor fallback writes the same bytes (see files.spec.ts), which is
+ * what withoutPicker handles.
  */
-async function panelFor(page: Page): Promise<FrameLocator> {
-  await panelReady(page);
-  return panelOf(page);
-}
+const panelFor = (page: Page): Promise<Page> => panelReady(page);
 
 test('flow 1: activate, audit, read a finding, jump to it, resolve it, save the file', async ({
   openFixture,
@@ -80,7 +77,7 @@ test('flow 1: activate, audit, read a finding, jump to it, resolve it, save the 
   // Save lives behind the panel's disclosure now.
   await openMore(page);
   const download = await Promise.all([
-    page.waitForEvent('download'),
+    panel.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save audit' }).click(),
   ]).then(([event]) => event);
 
@@ -155,7 +152,7 @@ test('flow 2: activate, select an element, read its contextual finding, add it t
   // Save lives behind the panel's disclosure now.
   await openMore(page);
   const download = await Promise.all([
-    page.waitForEvent('download'),
+    panel.waitForEvent('download'),
     panel.getByRole('button', { name: 'Save report' }).click(),
   ]).then(([event]) => event);
 

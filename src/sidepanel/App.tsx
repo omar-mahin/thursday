@@ -179,6 +179,15 @@ export function App(): React.ReactElement {
           current?.audit.id === next.audit.id ? { ...current, persisted } : current,
         );
       }
+      /*
+       * Whichever way it went, the question is now answered.
+       *
+       * `persisted` cannot say this on its own: it starts false and stays false
+       * when history is off or the write failed, so false means both "not yet"
+       * and "not going to". The screenshot sweep needs the difference -- see
+       * the effect below -- so the settled moment is recorded explicitly.
+       */
+      setHistoryAttempted(next.audit.id);
     })();
     // library.persist is stable; depending on it would re-run this on refresh.
   }, [audit.result]);
@@ -196,16 +205,33 @@ export function App(): React.ReactElement {
    * Only for a live audit -- one reopened from history has its crops already,
    * and the page in front of the user may be nothing to do with it.
    */
+  /** The audit whose attempt at going into history has finished, either way. */
+  const [historyAttempted, setHistoryAttempted] = useState<string | null>(null);
   const swept = useRef<string | null>(null);
   useEffect(() => {
     if (!active || active.source !== 'live' || !shots.enabled) return;
     if (!page.activated || !page.snapshot) return;
+    /*
+     * After the audit is in history, not alongside it.
+     *
+     * A crop is stored against its audit, and `putScreenshot` now refuses to
+     * write one whose audit is not there -- which is what makes "clear
+     * everything" impossible to outrun. Starting the sweep while `persist` was
+     * still in flight would meet that refusal honestly and drop the first
+     * band's pictures from history for no reason. Waiting costs a few
+     * milliseconds of scrolling that nobody can perceive.
+     *
+     * The wait ends either way. If the audit did not go into history -- turned
+     * off, or the write failed -- the crops live in this panel and in the
+     * exports, which is all they could do in that case anyway.
+     */
+    if (historyAttempted !== active.audit.id) return;
     if (swept.current === active.audit.id) return;
     swept.current = active.audit.id;
     void shots.captureAll(active.findings, page.snapshot);
     // shots.captureAll is stable, and re-running on findings changing would
     // re-photograph the page every time somebody dismisses a row.
-  }, [active?.audit.id, shots.enabled, page.activated]);
+  }, [active?.audit.id, historyAttempted, shots.enabled, page.activated]);
 
   // Whatever is active drives the list. Keyed on when it was opened, not on
   // the object: marking an audit as saved must not reload it and throw away

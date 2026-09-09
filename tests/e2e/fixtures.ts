@@ -2,7 +2,6 @@ import {
   test as base,
   chromium,
   type BrowserContext,
-  type Frame,
   type Locator,
   type Page,
   type Worker,
@@ -15,66 +14,89 @@ import { join, resolve } from 'node:path';
 export const FIXTURE_ORIGIN = 'https://fixture.thursday.test';
 
 /**
- * The panel, as it actually ships: a frame the content script mounts on the page.
+ * The panel, as the tests can reach it.
  *
- * Tests used to open `panel.html` in a tab of its own, which worked while the
- * panel was a side panel and is now actively misleading -- a second panel
- * document is a second panel, and it does its own auditing. Two of them made
- * two audits from one button press.
+ * Chrome's side panel cannot be driven by Playwright -- there is no target for
+ * it -- so every spec opens the same document, panel.html, in a tab of its own
+ * and drives that. It is the real panel: same React, same port to the worker,
+ * same IndexedDB. What it is not is docked, and nothing here depends on where
+ * the browser draws it.
  *
- * A FrameLocator, not a Page, so the things a Page can do and a frame cannot
- * belong to the page around it: downloads fire on the page, `addInitScript`
- * applies to the page and its frames, and anything needing an extension-origin
- * `evaluate` should open the options page instead.
+ * Keyed to the audited page rather than global, because a spec can have two
+ * audited pages and each needs its own panel -- and because `panelOf` has to
+ * hand back the same panel every time it is asked, not open another one. A
+ * second panel document is a second panel: it would audit too.
  */
-export const panelOf = (page: Page) => page.frameLocator('thursday-root iframe.pf-frame');
+const panels = new WeakMap<Page, Page>();
 
 /**
- * Waits for the framed panel to be mounted and connected.
+ * Opens the panel for a page and waits until it can be driven.
  *
- * The frame is created after settings are read and the panel inside it has to
- * boot React and open a port, so "activate returned" is not "the panel is
- * ready". Every test that drives the panel starts here.
+ * "Activate returned" is not "the panel is ready": the panel has to boot React
+ * and open a port to the worker first. Every test that drives the panel starts
+ * here.
  */
-export async function panelReady(page: Page): Promise<void> {
-  await page.locator('thursday-root .pf-root').waitFor({ state: 'visible', timeout: 15_000 });
-  await panelOf(page).getByRole('button', { name: 'Full audit' }).waitFor({ timeout: 15_000 });
+export async function panelReady(page: Page): Promise<Page> {
+  const existing = panels.get(page);
+  if (existing) return existing;
+  const context = page.context();
+  const extensionId = await extensionIdOf(context);
+  const panel = await context.newPage();
+  await panel.goto(`chrome-extension://${extensionId}/panel.html`);
+  await panel.getByRole('button', { name: 'Full audit' }).waitFor({ timeout: 15_000 });
+  panels.set(page, panel);
+  return panel;
+}
+
+/**
+ * The panel belonging to a page. `panelReady` must have been awaited first.
+ *
+ * Synchronous on purpose: it is called inline in a hundred assertions, and
+ * making it async would put an `await` in front of every one of them for no
+ * gain. The throw says which of the two calls is missing.
+ */
+export function panelOf(page: Page): Page {
+  const panel = panels.get(page);
+  if (!panel) throw new Error('await panelReady(page) before panelOf(page)');
+  return panel;
 }
 
 /**
  * The panel's document, for the few things a locator cannot do.
  *
- * `panelOf` returns a FrameLocator, which is right for finding and clicking
- * but cannot `evaluate` -- and a couple of tests have to run script inside the
- * panel itself, to read `document.activeElement` or a computed style. A Frame
- * can, so this hands back the frame.
+ * The same Page, and this exists only so the specs that need to `evaluate`
+ * inside the panel say why they are reaching for it.
  */
-export function panelDoc(page: Page): Frame {
-  const frame = page.frames().find((candidate) => candidate.url().includes('panel.html'));
-  if (!frame) throw new Error('the panel frame is not attached to this page');
-  return frame;
+export function panelDoc(page: Page): Page {
+  return panelOf(page);
+}
+
+/**
+ * The extension's id, read from the service worker that is already running.
+ *
+ * Every spec has it as a fixture, but `panelReady` takes only a page -- so it
+ * is recovered from the worker's URL rather than threaded through a hundred
+ * call sites.
+ */
+async function extensionIdOf(context: BrowserContext): Promise<string> {
+  const worker = context.serviceWorkers()[0] ?? (await context.waitForEvent('serviceworker'));
+  return new URL(worker.url()).host;
 }
 
 /**
  * Takes the save-file picker away, before anything that might use it exists.
  *
  * The native dialog cannot be driven, so the panel's anchor fallback is what
- * the tests exercise -- it writes the same bytes (see files.spec.ts). It has to
- * be installed on the *page* rather than on the panel, because the panel is a
- * frame of that page now, and it has to be installed before the frame is
- * created: an init script only reaches frames attached after it is added.
+ * the tests exercise -- it writes the same bytes (see files.spec.ts).
  */
 export async function withoutPicker(context: BrowserContext): Promise<void> {
   /*
-   * On the context, not the page, and that distinction cost an hour.
+   * On the context, not the page.
    *
-   * The panel is a cross-origin frame now, and `page.addInitScript` does not
-   * reach it -- so the panel kept the real picker, opened a native dialog that
-   * no test can drive, and every download assertion timed out waiting for an
-   * event that was never coming. A context-level script reaches every page and
-   * every frame in it.
-   *
-   * Must still be called before the frame loads, which means before activating.
+   * The panel is a document of its own, so a script installed on the audited
+   * page never reaches it -- and it is the panel that saves files. A
+   * context-level script reaches every page in the context, including one
+   * opened later, which is what makes the ordering forgiving here.
    */
   await context.addInitScript(() => {
     Reflect.deleteProperty(window, 'showSaveFilePicker');
@@ -84,10 +106,10 @@ export async function withoutPicker(context: BrowserContext): Promise<void> {
 /**
  * A page on the extension's own origin, for reading storage.
  *
- * The panel used to be a document in a tab, so a test could `evaluate` in it
- * and open IndexedDB. It is a frame now, and a FrameLocator cannot evaluate --
- * so anything that needs to look at the database from the extension's origin
- * opens the options page instead. It touches nothing the tests assert on.
+ * The panel could serve for this -- it is a document on the extension's origin
+ * and can evaluate. The options page is used instead so that reading the
+ * database never depends on a panel being open, and never perturbs one that
+ * is: an audit in flight is exactly when a test most wants to look.
  */
 export async function extensionPage(context: BrowserContext, extensionId: string): Promise<Page> {
   const page = await context.newPage();
@@ -98,15 +120,15 @@ export async function extensionPage(context: BrowserContext, extensionId: string
 /**
  * Opens the panel's History / files / comparison disclosure.
  *
- * Those moved behind one closed-by-default control: in a 380px floating window
- * they pushed the findings off the bottom, and they are not what you look at
- * while working through a list. Anything asserting on them has to open it.
+ * Those moved behind one closed-by-default control: in a 380px panel they
+ * pushed the findings off the bottom, and they are not what you look at while
+ * working through a list. Anything asserting on them has to open it.
  */
 export async function openMore(page: Page): Promise<void> {
-  await openDisclosure(panelOf(page).locator('.more-toggle'), panelOf(page).locator(".more[data-open='true']"));
+  await openMoreIn(panelOf(page));
 }
 
-/** The same, for a panel opened as its own document rather than as a frame. */
+/** The same, given the panel directly. */
 export async function openMoreIn(panel: Page): Promise<void> {
   await openDisclosure(panel.locator('.more-toggle'), panel.locator(".more[data-open='true']"));
 }

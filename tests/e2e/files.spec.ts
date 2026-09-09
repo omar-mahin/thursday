@@ -100,7 +100,7 @@ testWithHostAccess(
     await openMore(page);
     const download = await Promise.all([
       // The panel is a frame of the page, so the download lands on the page.
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
 
@@ -138,7 +138,7 @@ testWithHostAccess(
     await openMore(page);
     const download = await Promise.all([
       // The panel is a frame of the page, so the download lands on the page.
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save report' }).click(),
     ]).then(([event]) => event);
 
@@ -201,7 +201,7 @@ testWithHostAccess(
     await openMore(page);
     const download = await Promise.all([
       // The panel is a frame of the page, so the download lands on the page.
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save report' }).click(),
     ]).then(([event]) => event);
 

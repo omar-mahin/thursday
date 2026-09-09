@@ -4,8 +4,6 @@ import { STORAGE_KEY_PREFIX } from '../shared/constants/product';
  *  screenshots live in IndexedDB (storage/db.ts). Nothing leaves the machine. */
 export type ToolbarPosition = { x: number; y: number };
 
-export type PanelGeometry = { x: number; y: number; width: number; height: number; collapsed: boolean };
-
 export type Settings = {
   /**
    * The name that goes on comments.
@@ -19,14 +17,6 @@ export type Settings = {
    */
   authorName: string;
   toolbarPosition: ToolbarPosition | null;
-  /**
-   * Where the floating panel was last left, and how big.
-   *
-   * Remembered because it is now a window the user arranges rather than a dock
-   * Chrome owns -- and having to drag it back into place on every page would
-   * make floating worse than docked.
-   */
-  panelGeometry: PanelGeometry | null;
   theme: 'system' | 'dark' | 'light';
   minTouchTarget: number;
   /**
@@ -61,7 +51,6 @@ export type Settings = {
 export const DEFAULT_SETTINGS: Settings = {
   authorName: '',
   toolbarPosition: null,
-  panelGeometry: null,
   theme: 'system',
   minTouchTarget: 44,
   keepHistory: true,

@@ -1,7 +1,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { FIXTURE_ORIGIN, expect, extensionPage, openMore, panelOf, panelReady, test, testWithHostAccess, withoutPicker } from './fixtures';
-import type { FrameLocator, Page } from '@playwright/test';
+import { FIXTURE_ORIGIN, expect, extensionPage, openMore, panelReady, test, testWithHostAccess, withoutPicker } from './fixtures';
+import type { Page } from '@playwright/test';
 
 /**
  * Comments the user writes on a page, with images attached to them.
@@ -27,12 +27,9 @@ const IMAGE = resolve('tests/fixtures/annotation-image.png');
  * reaches frames attached after it is added, and the panel frame is attached by
  * the content script during activation.
  */
-const openPanel = async (page: Page): Promise<FrameLocator> => {
-  await panelReady(page);
-  return panelOf(page);
-};
+const openPanel = (page: Page): Promise<Page> => panelReady(page);
 
-const card = (panel: Page | FrameLocator) =>
+const card = (panel: Page) =>
   panel.locator('.card', { has: panel.locator('.section-title', { hasText: 'Comments' }) });
 
 /**
@@ -58,7 +55,7 @@ const CARD = 'thursday-root .cm-card';
  * overlay off it for a moment. Anything that then clicks on the page has to
  * let that finish, or it is clicking at coordinates that have moved.
  */
-const settle = (panel: FrameLocator): Promise<void> =>
+const settle = (panel: Page): Promise<void> =>
   expect(panel.locator('.progress', { hasText: 'Photographing' })).toHaveCount(0, {
     timeout: 60_000,
   });
@@ -77,7 +74,7 @@ const settle = (panel: FrameLocator): Promise<void> =>
  */
 async function writeOnPage(
   page: Page,
-  panel: FrameLocator,
+  panel: Page,
   options: { text: string; anchor?: string; files?: Parameters<Page['setInputFiles']>[1]; priority?: string },
 ): Promise<void> {
   await panel
@@ -160,7 +157,7 @@ testWithHostAccess(
     // Save lives behind the panel's disclosure now.
     await openMore(page);
     const download = await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const text = readFileSync(await download.path(), 'utf8');
@@ -491,7 +488,7 @@ testWithHostAccess(
     // Save lives behind the panel's disclosure now.
     await openMore(page);
     const download = await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const text = readFileSync(await download.path(), 'utf8');
@@ -536,7 +533,7 @@ testWithHostAccess(
     // Save lives behind the panel's disclosure now.
     await openMore(page);
     const download = await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save report' }).click(),
     ]).then(([event]) => event);
     const html = readFileSync(await download.path(), 'utf8');
@@ -593,7 +590,7 @@ testWithHostAccess(
     // Save lives behind the panel's disclosure now.
     await openMore(page);
     const download = await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const text = readFileSync(await download.path(), 'utf8');
@@ -686,7 +683,7 @@ testWithHostAccess(
     // Save lives behind the panel's disclosure now.
     await openMore(page);
     const download = await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const parsed = JSON.parse(readFileSync(await download.path(), 'utf8')) as {
@@ -745,7 +742,7 @@ testWithHostAccess(
     // Save lives behind the panel's disclosure now.
     await openMore(page);
     const download = await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]).then(([event]) => event);
     const text = readFileSync(await download.path(), 'utf8');

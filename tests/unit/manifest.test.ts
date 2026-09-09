@@ -9,12 +9,13 @@ import { ACTIVATE_COMMAND, ACTIVATE_SHORTCUT } from '../../src/shared/constants/
 describe('manifest', () => {
   const record = manifest as unknown as Record<string, unknown>;
 
-  it('requests exactly three permissions', () => {
-    // Was four. `sidePanel` went when the panel became a floating frame the
-    // content script mounts itself -- a capability removed by a redesign
-    // rather than kept in case.
-    expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting']);
-    expect(REQUIRED_PERMISSIONS).toHaveLength(3);
+  it('requests exactly four permissions', () => {
+    // `sidePanel` is back, along with the docked panel it exists for. It went
+    // for a while when the panel floated, and the trade is worth naming: a
+    // permission for the panel Chrome draws, or a web-accessible resource so
+    // the page can frame our own. The permission is the narrower of the two.
+    expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting', 'sidePanel']);
+    expect(REQUIRED_PERMISSIONS).toHaveLength(4);
   });
 
   it('requests no host access', () => {
@@ -30,29 +31,21 @@ describe('manifest', () => {
     expect(record['externally_connectable']).toBeUndefined();
   });
 
-  it('exposes exactly one resource to web pages', () => {
+  it('exposes nothing to web pages', () => {
     /*
-     * The panel is an extension document -- it needs the extension origin to
-     * reach IndexedDB at all -- so floating it over the page means framing it,
-     * and framing an extension page inside a web page requires that page to be
-     * web-accessible. This is the one deliberate widening in the manifest.
+     * Nothing, not "one narrow thing".
      *
-     * Asserted field by field rather than as "something is declared", because
-     * the whole value is in the narrowness: one file, and nothing else.
-     *
-     * No `use_dynamic_url`, and that is deliberate rather than forgotten. It
-     * was set, and it broke the panel in a real browser: getURL() returns the
-     * static path, which a dynamic URL makes unloadable from a page, so the
-     * frame showed Chrome's "blocked" screen. The frame is cross-origin to its
-     * host page either way, so a site can embed it and read nothing out of it.
+     * Framing the panel over the page required declaring panel.html
+     * web-accessible, which is a URL any site can embed. The exposure was
+     * genuinely small -- cross-origin, so a site could display the panel and
+     * read nothing out of it -- but it was a widening of the manifest bought
+     * for placement alone, and the docked panel needs no such thing.
      */
-    expect(record['web_accessible_resources']).toEqual([
-      { resources: ['panel.html'], matches: ['<all_urls>'] },
-    ]);
+    expect(record['web_accessible_resources']).toBeUndefined();
   });
 
-  it('no longer declares a side panel', () => {
-    expect(record['side_panel']).toBeUndefined();
+  it('declares the side panel it docks into', () => {
+    expect(record['side_panel']).toEqual({ default_path: 'panel.html' });
   });
 
   it('is manifest v3 with a module service worker', () => {
@@ -81,9 +74,9 @@ describe('the shipped build against the test build', () => {
      * activeTab and nothing else.
      *
      * Checked on host_permissions specifically rather than on the whole
-     * manifest text, because `<all_urls>` now legitimately appears in
-     * web_accessible_resources -- and a grep of the whole file would pass for
-     * the wrong reason or fail for the wrong one.
+     * manifest text: the shipped manifest has no `<all_urls>` anywhere now,
+     * but asserting the field says what is actually meant and keeps saying it
+     * if some other field ever legitimately carries that pattern.
      */
     expect(shipped['host_permissions']).toBeUndefined();
     expect(shipped['optional_host_permissions']).toBeUndefined();
@@ -120,6 +113,10 @@ describe('the keyboard shortcut', () => {
   });
 
   it('adds no permission', () => {
-    expect(manifest.permissions).toEqual(['storage', 'activeTab', 'scripting']);
+    // The shortcut grants activeTab by being a user gesture, exactly as
+    // clicking the action does, so it costs nothing in the manifest. Compared
+    // against the same list the contract above asserts, so the two cannot
+    // drift apart.
+    expect(manifest.permissions).toEqual([...REQUIRED_PERMISSIONS]);
   });
 });

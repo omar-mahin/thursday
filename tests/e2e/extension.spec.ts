@@ -5,7 +5,7 @@ test('the service worker registers and serves the built manifest', async ({ cont
   const page = await context.newPage();
   const response = await page.goto(`chrome-extension://${extensionId}/manifest.json`);
   const manifest = JSON.parse((await response?.text()) ?? '{}') as Record<string, unknown>;
-  expect(manifest['permissions']).toEqual(['storage', 'activeTab', 'scripting']);
+  expect(manifest['permissions']).toEqual(['storage', 'activeTab', 'scripting', 'sidePanel']);
   expect(manifest['host_permissions']).toBeUndefined();
 });
 
@@ -14,7 +14,7 @@ test('the popup offers activation and states the privacy posture', async ({ cont
   await page.goto(`chrome-extension://${extensionId}/popup.html`);
   await expect(page.getByRole('heading', { name: 'Thursday' })).toBeVisible();
   await expect(page.getByText('Runs locally. No account, no network.')).toBeVisible();
-  await expect(page.getByRole('button', { name: /Activate on this page|Back to the page/ })).toBeVisible();
+  await expect(page.getByRole('button', { name: /Activate on this page|Open audit panel/ })).toBeVisible();
 });
 
 test('the panel connects a port and receives page status from the worker', async ({

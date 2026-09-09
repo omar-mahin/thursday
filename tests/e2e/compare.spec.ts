@@ -1,5 +1,5 @@
-import { expect, openMore, panelOf, panelReady, testWithHostAccess as test } from './fixtures';
-import type { FrameLocator, Page } from '@playwright/test';
+import { expect, openMore, panelReady, testWithHostAccess as test } from './fixtures';
+import type { Page } from '@playwright/test';
 
 /**
  * Re-auditing a page and seeing what moved.
@@ -15,10 +15,7 @@ import type { FrameLocator, Page } from '@playwright/test';
  * page, a second one is a second panel, and pressing Audit made both of them
  * run an audit.
  */
-const openPanel = async (page: Page): Promise<FrameLocator> => {
-  await panelReady(page);
-  return panelOf(page);
-};
+const openPanel = (page: Page): Promise<Page> => panelReady(page);
 
 test('re-auditing an unchanged page reports nothing fixed and nothing new', async ({
   openFixture,

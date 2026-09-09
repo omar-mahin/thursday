@@ -39,6 +39,14 @@ let lastActivatedTabId: number | undefined;
 
 const CONTENT_SCRIPT_FILE = 'content.js';
 
+// The popup opens the side panel itself (it has the user gesture), so the action
+// click must not also toggle it.
+chrome.runtime.onInstalled.addListener(() => {
+  void chrome.sidePanel.setPanelBehavior({ openPanelOnActionClick: false }).catch(() => {
+    /* older Chrome: default behaviour is fine */
+  });
+});
+
 async function getActiveTab(): Promise<chrome.tabs.Tab | undefined> {
   const [tab] = await chrome.tabs.query({ active: true, lastFocusedWindow: true });
   return tab;
@@ -67,10 +75,17 @@ async function targetTab(): Promise<number | undefined> {
  * The count is the point of the return value: `panelPorts.size` is not the same
  * question as "will this reach anybody", because of the filter below. A caller
  * that asks the first and acts on the second can forward an
- * `ANNOTATION_SUBMITTED` into nothing -- every connected panel belongs to some
- * other tab -- leaving the comment unstored and the page waiting on an
- * acknowledgement that will never come. So callers that must not drop a message
- * branch on what was actually delivered rather than on who exists.
+ * `ANNOTATION_SUBMITTED` into nothing -- the docked panel is open on some other
+ * tab, so it is filtered out -- leaving the comment unstored and the page
+ * waiting on an acknowledgement that will never come. So callers that must not
+ * drop a message branch on what was actually delivered rather than on who
+ * exists.
+ *
+ * Not covered by a test, and worth saying so. Reaching it needs a panel whose
+ * own tab runs a content script, and Playwright cannot open Chrome's side
+ * panel -- the panel every spec drives is a plain tab, which owns no page and
+ * therefore hears everything. The hazard is real in a browser and untestable
+ * from here; the branch is one comparison and costs nothing.
  */
 function toPanels(message: ThursdayMessage, tabId?: number): number {
   const envelope: Envelope = tabId === undefined ? { from: 'content', message } : { from: 'content', tabId, message };
@@ -139,17 +154,18 @@ async function activate(tabId: number, url: string | undefined): Promise<{ ok: b
  *
  * Like clicking the action, pressing it is a user gesture that grants
  * activeTab -- which is why activation can start here and not from a button
- * inside the panel (PLAN.md section 2.1).
- *
- * There is nothing to open any more: the panel is part of what gets injected,
- * so activating is the whole of it.
+ * inside the side panel (PLAN.md section 2.1). It also opens the panel, since
+ * the gesture is what makes that allowed.
  */
 chrome.commands.onCommand.addListener((command) => {
   if (command !== ACTIVATE_COMMAND) return;
   void (async () => {
     const tab = await getActiveTab();
     if (tab?.id === undefined) return;
+    // Opened first: the gesture window closes once we start awaiting other work.
+    const panel = chrome.sidePanel.open({ tabId: tab.id }).catch(() => undefined);
     const result = await activate(tab.id, tab.url);
+    await panel;
     if (!result.ok) panelError(result.code ?? 'UNKNOWN');
   })();
 });
@@ -325,13 +341,6 @@ function routeFromContent(tabId: number, message: ThursdayMessage): void {
     case 'ERROR':
       toPanels(message, tabId);
       return;
-    case 'OPEN_PANEL_TAB':
-      // The frame could not show the panel, so give it a tab. Nothing else
-      // in the extension can navigate on the page's behalf.
-      void chrome.tabs.create({ url: chrome.runtime.getURL('panel.html') }).catch(() => {
-        toPanels({ type: 'ERROR', payload: { code: 'UNKNOWN', detail: 'Could not open the panel.' } }, tabId);
-      });
-      return;
     case 'ANNOTATION_SUBMITTED':
       /*
        * The one thing the worker stores rather than forwards, and only when
@@ -431,7 +440,6 @@ async function routeFromPanel(message: ThursdayMessage): Promise<void> {
     case 'ANNOTATION_SUBMITTED':
     case 'BAND_READY':
     case 'COMMENTS_CHANGED':
-    case 'OPEN_PANEL_TAB':
     case 'TOOLBAR_ACTION':
     case 'ERROR':
       return;

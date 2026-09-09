@@ -137,7 +137,7 @@ test('the extracted zip loads and runs in Chrome', async () => {
 
     // And the permission set survived packaging unchanged.
     const permissions = await (await extensionPage(context, extensionId)).evaluate(() => chrome.runtime.getManifest().permissions);
-    expect(permissions).toEqual(['storage', 'activeTab', 'scripting']);
+    expect(permissions).toEqual(['storage', 'activeTab', 'scripting', 'sidePanel']);
     const shipped = await (await extensionPage(context, extensionId)).evaluate(() => chrome.runtime.getManifest() as Record<string, unknown>);
     expect(shipped['host_permissions']).toBeUndefined();
     expect(shipped['content_scripts']).toBeUndefined();

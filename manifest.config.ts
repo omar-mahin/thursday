@@ -10,7 +10,7 @@ import {
  * `tests/unit/manifest.test.ts` asserts this list exactly. Adding to it is a
  * deliberate product decision (see PLAN.md section 1).
  */
-export const REQUIRED_PERMISSIONS = ['storage', 'activeTab', 'scripting'] as const;
+export const REQUIRED_PERMISSIONS = ['storage', 'activeTab', 'scripting', 'sidePanel'] as const;
 
 /** One version number, shown in the panel and stamped into every export. */
 export const PRODUCT_VERSION = '1.0.1';
@@ -27,14 +27,13 @@ export const manifest = {
   name: PRODUCT_NAME,
   version: PRODUCT_VERSION,
   description: PRODUCT_TAGLINE,
-  // use_dynamic_url on a web-accessible resource requires 110; nothing here
-  // needs more than that now the side panel is gone.
+  // chrome.sidePanel.open() needs 116.
   minimum_chrome_version: '116',
 
   permissions: [...REQUIRED_PERMISSIONS],
   // No host_permissions: nothing is injected until the user clicks the action.
   // No content_scripts: injection is on-demand via chrome.scripting.
-  // One web-accessible resource, and the reason is worth writing down.
+  // No web_accessible_resources: the page never loads our files.
   // No externally_connectable: no other extension or site can talk to us.
 
   icons: ICONS,
@@ -58,28 +57,21 @@ export const manifest = {
   },
 
   /**
-   * The panel, framed over the page rather than docked beside it.
+   * The panel, docked beside the page.
    *
-   * The panel is an extension document -- it needs the extension origin to
-   * reach IndexedDB and chrome.* at all -- so floating it means the content
-   * script puts it in an iframe, and an iframe of an extension page inside a
-   * web page requires that page to be web-accessible.
+   * It floated over the page for a while -- an iframe of this document inside
+   * the content script's shadow root, draggable and resizable -- and that is
+   * gone again. Docking is what Chrome gives you: the browser owns the edge, so
+   * the panel cannot cover the page being audited, cannot be dragged somewhere
+   * a screenshot will catch it, and needs no web-accessible resource to exist.
    *
-   * It was declared with `use_dynamic_url: true` first, for an unguessable
-   * address that rotates per session. That has to come out, and the reason is
-   * worth recording: `chrome.runtime.getURL()` returns the *static* path, and
-   * with a dynamic URL in force that path is not loadable from a page -- so
-   * the panel came up as Chrome's "This page has been blocked" screen inside
-   * its own frame. It did so in a real browser while every test passed, which
-   * is its own lesson about where this can and cannot be verified.
-   *
-   * What remains is a guessable URL for one HTML file. The frame is still
-   * cross-origin to whatever page embeds it, so a hostile site can display
-   * Thursday's panel and read nothing out of it -- no pixel, no byte, no
-   * script access. That is the whole of the exposure, and it buys an attacker
-   * nothing they could not achieve by drawing a picture of the panel.
+   * That last point is the one worth keeping in view. Framing the panel meant
+   * declaring panel.html web-accessible, which is a URL any site can embed.
+   * The exposure was small and the reasoning was sound, but it was still a
+   * widening of the manifest bought purely for placement. Docked, the page
+   * never loads our files at all.
    */
-  web_accessible_resources: [{ resources: ['panel.html'], matches: ['<all_urls>'] }],
+  side_panel: { default_path: 'panel.html' },
   options_page: 'options.html',
   background: { service_worker: 'service-worker.js', type: 'module' },
 } as const;

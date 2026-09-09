@@ -184,8 +184,27 @@ export async function clearAll(): Promise<void> {
   }
 }
 
+/**
+ * Stores one crop, but only while the audit it belongs to still exists.
+ *
+ * The check is the point, and it is inside the transaction on purpose.
+ *
+ * A screenshot sweep runs for a few seconds after an audit and the options
+ * page's "Clear everything" is reachable throughout, so a write can be in
+ * flight when the database is emptied. CLEARED_AT_KEY tells the panel to stop,
+ * and that closes most of the window -- but only most: a write already past
+ * that check and waiting on its own transaction still lands, and then a blob
+ * outlives the clear that was supposed to remove it. Measured, one row.
+ *
+ * Reading the audit in the same readwrite transaction as the put makes it
+ * airtight rather than merely narrow: `clearAll` empties audits and blobs
+ * together, so after it commits there is no audit to find and a late write
+ * declines itself. No orphan can be created, whatever the timing.
+ */
 export async function putScreenshot(auditId: string, findingId: string, blob: Blob): Promise<void> {
-  await transact(STORE_BLOBS, 'readwrite', (transaction) => {
+  await transact([STORE_AUDITS, STORE_BLOBS], 'readwrite', async (transaction) => {
+    const audit = await requestAsPromise(transaction.objectStore(STORE_AUDITS).get(auditId));
+    if (!audit) return;
     transaction.objectStore(STORE_BLOBS).put({ findingId, auditId, blob } satisfies BlobRecord);
   });
 }

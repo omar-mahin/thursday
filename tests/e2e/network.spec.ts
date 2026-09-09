@@ -73,11 +73,11 @@ testWithHostAccess(
     // Saving and opening live behind the panel's disclosure now.
     await openMore(page);
     await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save audit' }).click(),
     ]);
     await Promise.all([
-      page.waitForEvent('download'),
+      panel.waitForEvent('download'),
       panel.getByRole('button', { name: 'Save report' }).click(),
     ]);
 
